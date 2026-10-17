@@ -41,14 +41,41 @@ class HabitScoreCalculatorTest {
     }
 
     @Test
-    fun futureCreationAndCompletionsBeforeCreationAreIgnored() {
+    fun futureCreationAndFutureCompletionsAreIgnored() {
         val today = start.plusDays(1)
         assertEquals(0.0, HabitScoreCalculator.calculate(today.plusDays(1), setOf(start), today), 0.0)
         assertEquals(
-            HabitScoreCalculator.calculate(today, emptySet(), today),
-            HabitScoreCalculator.calculate(today, setOf(start), today),
+            HabitScoreCalculator.calculate(start, emptySet(), today),
+            HabitScoreCalculator.calculate(start, setOf(today.plusDays(1)), today),
             0.0,
         )
+    }
+
+    @Test
+    fun earliestHistoricalCompletionMovesTrackingStartBeforeCreation() {
+        val createdOn = start.plusDays(10)
+        val earlyCompletion = start
+        val history = setOf(earlyCompletion, createdOn)
+
+        assertEquals(
+            HabitScoreCalculator.calculate(earlyCompletion, history, createdOn),
+            HabitScoreCalculator.calculate(createdOn, history, createdOn),
+            0.0,
+        )
+    }
+
+    @Test
+    fun removingEarliestHistoricalCompletionMovesTrackingStartForward() {
+        val createdOn = start.plusDays(10)
+        val earliestCompletion = start
+        val nextCompletion = start.plusDays(4)
+        val history = setOf(earliestCompletion, nextCompletion, createdOn)
+
+        val afterRemoval = HabitScoreCalculator.calculate(createdOn, history - earliestCompletion, createdOn)
+        val derivedFromNewStart = HabitScoreCalculator.calculate(nextCompletion, history - earliestCompletion, createdOn)
+
+        assertEquals(derivedFromNewStart, afterRemoval, 0.0)
+        assertTrue(afterRemoval < HabitScoreCalculator.calculate(createdOn, history, createdOn))
     }
 
     @Test

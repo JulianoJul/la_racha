@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -23,6 +24,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -33,6 +36,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +57,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -61,13 +69,19 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.laracha.app.R
 import com.laracha.app.data.HabitEntity
 import com.laracha.app.data.HabitRepository
 import com.laracha.app.data.HabitToday
 import com.laracha.app.HabitApplication
 import com.laracha.app.data.CalendarEventBindingEntity
+import com.laracha.app.data.frequency
+import com.laracha.app.domain.HabitFrequency
+import java.time.DayOfWeek
+import java.time.temporal.TemporalAdjusters
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -82,6 +96,7 @@ fun TodayScreen(
     repository: HabitRepository,
     today: LocalDate,
     onOpenSettings: () -> Unit,
+    onOpenCalendar: () -> Unit,
     onDayChanged: () -> Unit,
     openedHabitId: String? = null,
     onOpenedHabitIdHandled: () -> Unit = {},
@@ -115,6 +130,7 @@ fun TodayScreen(
     val active = habits
     val archived = allHabits.filter { it.archivedOn != null }
     val done = active.count(HabitToday::completedToday)
+    val listState = rememberLazyListState()
 
     detailHabitId?.let { habitId ->
         HabitDetailScreen(
@@ -146,8 +162,10 @@ fun TodayScreen(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { contentPadding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(contentPadding),
+        Column(Modifier.fillMaxSize().padding(contentPadding)) {
+          LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 start = 20.dp,
                 top = 16.dp,
@@ -155,7 +173,7 @@ fun TodayScreen(
                 bottom = 96.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+          ) {
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -163,8 +181,16 @@ fun TodayScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(dateLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Ajustes")
+                    Row {
+                        IconButton(onClick = onOpenCalendar) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_calendar_today),
+                                contentDescription = "Google Calendar",
+                            )
+                        }
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = "Ajustes")
+                        }
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -256,19 +282,26 @@ fun TodayScreen(
                     }
                 }
             }
+          }
+          if (listState.canScrollForward || listState.canScrollBackward) {
+              ScrollHint(showDown = listState.canScrollForward)
+          }
         }
     }
 
-    if (showEditor) {
+    if (showEditor && (editingId == null || editing != null)) {
         HabitEditorDialog(
             initial = editing,
+            initialFrequency = editing?.frequency() ?: HabitFrequency.Daily,
+            today = today,
             onDismiss = { showEditor = false },
-            onSave = { name, emoji, color ->
+            onSave = { name, emoji, color, frequency ->
                 scope.launch {
                     val current = editing
-                    if (current == null) repository.createHabit(name, emoji, color)
+                    if (current == null) repository.createHabit(name, emoji, color, frequency)
                     else {
                         repository.renameHabit(current.id, name, emoji, color)
+                        repository.updateFrequency(current.id, frequency)
                         val app = context.applicationContext as HabitApplication
                         val schedule = app.database.calendarDao().getSchedule(current.id)
                         val binding = app.database.calendarDao().getBinding(current.id)
@@ -346,6 +379,27 @@ fun TodayScreen(
     }
 }
 
+@Composable
+private fun ScrollHint(showDown: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            if (showDown) "Desliza hacia abajo" else "Desliza hacia arriba",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Icon(
+            if (showDown) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 private fun hasManagedCalendarBinding(bindings: List<CalendarEventBindingEntity>, habitId: String): Boolean =
     bindings.any { it.habitId == habitId && it.state !in setOf("DETACHED", "DELETED") }
 
@@ -361,10 +415,7 @@ private fun TodayProgress(done: Int, total: Int) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column {
-                Text("Hoy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("Un día cada vez", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            Text("Hoy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("$done / $total", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
     }
@@ -407,7 +458,14 @@ private fun HabitRow(
                 Text(item.habit.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    "${item.scorePercent}% constancia  ·  ${item.currentStreak} días de racha",
+                    "${item.scorePercent}% constancia",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "${item.currentStreak} ${if (item.currentStreak == 1) "día" else "días"} de racha",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -489,13 +547,61 @@ private fun EmptyHabits(onCreate: () -> Unit) {
 @Composable
 private fun HabitEditorDialog(
     initial: HabitEntity?,
+    initialFrequency: HabitFrequency,
+    today: LocalDate,
     onDismiss: () -> Unit,
-    onSave: (String, String, String) -> Unit,
+    onSave: (String, String, String, HabitFrequency) -> Unit,
 ) {
     var name by rememberSaveable(initial?.id) { mutableStateOf(initial?.name.orEmpty()) }
     var emoji by rememberSaveable(initial?.id) { mutableStateOf(initial?.emoji ?: HabitEmojis.first()) }
     var color by rememberSaveable(initial?.id) { mutableStateOf(initial?.color ?: HabitColors.first()) }
-    val valid = name.trim().isNotEmpty()
+    val initialFixedDays = initialFrequency as? HabitFrequency.FixedDays
+    val initialInterval = initialFrequency as? HabitFrequency.EveryNDays
+    val initialQuota = initialFrequency as? HabitFrequency.WeeklyQuota
+    var frequencyType by rememberSaveable(initial?.id) {
+        mutableStateOf(
+            when (initialFrequency) {
+                HabitFrequency.Daily -> "DAILY"
+                is HabitFrequency.FixedDays -> "FIXED_DAYS"
+                is HabitFrequency.EveryNDays -> "EVERY_N_DAYS"
+                is HabitFrequency.WeeklyQuota -> "WEEKLY_QUOTA"
+            },
+        )
+    }
+    var selectedDays by rememberSaveable(initial?.id) {
+        mutableStateOf(initialFixedDays?.days.orEmpty().joinToString(",") { it.value.toString() })
+    }
+    var intervalText by rememberSaveable(initial?.id) { mutableStateOf(initialInterval?.intervalDays?.toString() ?: "3") }
+    var referenceDate by rememberSaveable(initial?.id) {
+        mutableStateOf(
+            initialInterval?.referenceDate?.toString()
+                ?: when {
+                    initial == null -> today
+                    initialFrequency is HabitFrequency.WeeklyQuota -> today.with(TemporalAdjusters.next(DayOfWeek.MONDAY))
+                    else -> today.plusDays(1)
+                }.toString(),
+        )
+    }
+    var quotaText by rememberSaveable(initial?.id) { mutableStateOf(initialQuota?.timesPerWeek?.toString() ?: "3") }
+    val nameFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val chosenDays = selectedDays.split(',').mapNotNull { value -> value.toIntOrNull()?.let { DayOfWeek.of(it) } }.toSet()
+    val intervalValue = intervalText.toIntOrNull()
+    val quotaValue = quotaText.toIntOrNull()
+    val frequency: HabitFrequency? = when (frequencyType) {
+        "FIXED_DAYS" -> chosenDays.takeIf { it.isNotEmpty() }?.let { HabitFrequency.FixedDays(it) }
+        "EVERY_N_DAYS" -> intervalValue?.takeIf { it >= 1 }?.let { HabitFrequency.EveryNDays(it, LocalDate.parse(referenceDate)) }
+        "WEEKLY_QUOTA" -> quotaValue?.takeIf { it in 1..7 }?.let { HabitFrequency.WeeklyQuota(it) }
+        else -> HabitFrequency.Daily
+    }
+    val valid = name.trim().isNotEmpty() && frequency != null
+
+    androidx.compose.runtime.LaunchedEffect(initial?.id) {
+        if (initial == null) {
+            nameFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -508,8 +614,78 @@ private fun HabitEditorDialog(
                     label = { Text("Nombre") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().focusRequester(nameFocusRequester),
                 )
+                Text("Frecuencia", style = MaterialTheme.typography.labelLarge)
+                val frequencyOptions = listOf(
+                    "DAILY" to "Diario",
+                    "FIXED_DAYS" to "Días fijos",
+                    "EVERY_N_DAYS" to "Cada X días",
+                    "WEEKLY_QUOTA" to "Días por semana",
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    frequencyOptions.forEach { (code, label) ->
+                        FilterChip(
+                            selected = frequencyType == code,
+                            onClick = { frequencyType = code },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+                when (frequencyType) {
+                    "FIXED_DAYS" -> {
+                        Text("Días de la semana", style = MaterialTheme.typography.labelMedium)
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            listOf(
+                                DayOfWeek.MONDAY to "L",
+                                DayOfWeek.TUESDAY to "M",
+                                DayOfWeek.WEDNESDAY to "X",
+                                DayOfWeek.THURSDAY to "J",
+                                DayOfWeek.FRIDAY to "V",
+                                DayOfWeek.SATURDAY to "S",
+                                DayOfWeek.SUNDAY to "D",
+                            ).forEach { (day, label) ->
+                                val selected = day in chosenDays
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = {
+                                        val next = if (selected) chosenDays - day else chosenDays + day
+                                        selectedDays = next.sortedBy { it.value }.joinToString(",") { it.value.toString() }
+                                    },
+                                    label = { Text(label) },
+                                )
+                            }
+                        }
+                        if (chosenDays.isEmpty()) Text("Selecciona al menos un día", color = MaterialTheme.colorScheme.error)
+                    }
+                    "EVERY_N_DAYS" -> {
+                        OutlinedTextField(
+                            value = intervalText,
+                            onValueChange = { intervalText = it.filter(Char::isDigit).take(10) },
+                            label = { Text("Cada cuántos días") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                        )
+                        Text(
+                            "Referencia del intervalo: $referenceDate",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    "WEEKLY_QUOTA" -> OutlinedTextField(
+                        value = quotaText,
+                        onValueChange = { quotaText = it.filter(Char::isDigit).take(1) },
+                        label = { Text("Días distintos por semana (1–7)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                }
                 Text("Elige un icono", style = MaterialTheme.typography.labelLarge)
                 Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     HabitEmojis.forEach { choice ->
@@ -547,7 +723,7 @@ private fun HabitEditorDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = valid, onClick = { onSave(name.trim(), emoji, color) }) { Text("Guardar") }
+            TextButton(enabled = valid, onClick = { onSave(name.trim(), emoji, color, requireNotNull(frequency)) }) { Text("Guardar") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )

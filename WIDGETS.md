@@ -3,19 +3,19 @@
 ## Estado y base técnica
 Widgets nativos con Kotlin + Jetpack Glance, conectados al mismo repositorio Room que la app. Lista desplazable mediante `LazyColumn` real.
 
-**Última versión comprobada:** individual 2×2 con nombre, check grande y semana informativa; lista con navegación al detalle. **Siguiente versión acordada:** la semana sustituye al check grande, añade una métrica positiva y la lista reserva espacio para su barra de scroll. Estos cambios están pendientes de código.
+La evidencia histórica al final corresponde a versiones anteriores. **Diseño actual en código:** hoy grande en el centro del carrusel de días, métrica positiva y lista sin etiqueta de estado visible junto al check. La verificación de esta revisión se registra en `README.md`; no confundir build/tests con prueba de launcher.
 
 ## A. Individual
 ### Composición objetivo
-- Tamaño inicial 2×2, redimensionable, conjunto centrado: emoji/nombre, semana **L M M J V S D** y métrica opcional.
-- La propia semana contiene el control de hoy; eliminar el check grande duplicado.
+- Tamaño inicial 2×2, redimensionable, conjunto centrado: emoji/nombre, días alrededor de hoy y métrica opcional.
+- Hoy es el círculo más grande en el centro y el único control de completado; no hay otro check duplicado. Mostrar exactamente cinco fechas: dos anteriores, hoy y dos siguientes. Adaptar los círculos vecinos al ancho disponible sin desplazar hoy del centro.
 - Tocar hoy marca/desmarca sin abrir la app. Tocar nombre/emoji abre el detalle del hábito.
-- Los otros días muestran historial; la edición histórica sigue disponible en el detalle. No se presupone navegación entre semanas ni siete acciones diminutas por llamar «carrusel» a la fila.
+- Los otros días muestran historial real o fechas futuras sin acción; la edición histórica sigue en el detalle. «Carrusel» describe la presentación centrada, no una navegación horizontal de historial ni siete acciones diminutas.
 - Mostrar `🔥 N` si la racha actual es mayor que cero. Si es cero y el porcentaje mostrado de constancia es mayor que cero, mostrar ese porcentaje. Si ambos son cero, omitir la métrica y su espacio. No mostrar dos métricas simultáneas en este widget pequeño.
 - Elegir exactamente un hábito al configurar. Hábito borrado/archivado o selección ausente: estado comprensible con acceso a reconfigurar.
 
-### Semana y estados
-Semana local actual, lunes–domingo, derivada del historial; solo hoy usa azul.
+### Días y estados
+Ventana móvil de fechas de calendario alrededor de hoy, derivada del mismo historial del repositorio. Cruzar de semana, mes o año no cambia su orden ni oculta el día previo: hoy permanece en el centro. Solo hoy usa azul.
 
 | Fecha/estado | Representación |
 |---|---|
@@ -41,7 +41,9 @@ Al incorporar frecuencias, el estado accesible debe distinguir día libre y pend
 - `all`: todos los hábitos activos, sin límite artificial, con scroll vertical auténtico. Los nuevos aparecen automáticamente.
 - Encabezado «Mis hábitos», acceso a configuración y resumen del día cuando haya espacio. La semántica del resumen con frecuencias se define antes de incorporarlas; no equiparar «todos» a «solo los que tocan hoy» silenciosamente.
 - Cada fila: emoji, nombre, constancia o racha y control de completado independiente.
+- El control no repite nombre/estado como texto visible; la descripción accesible mantiene nombre, estado y acción.
 - Tocar la zona de información abre el detalle por **ID estable**, incluso si la app estaba en Ajustes/Calendar o mostraba otro hábito.
+- Tocar el fondo o un espacio vacío abre la app, también debajo de una lista corta. Los checks mantienen su acción independiente sin abrir la app; «Editar» sigue abriendo la configuración de esa instancia.
 - Reservar un canal lateral para la barra de desplazamiento del launcher, fuera del contenido y del área de toque de los checks. Comprobar con la barra visible mientras se arrastra, no solo en reposo.
 - Scroll y taps no deben activar accidentalmente el check de otra fila. La última fila debe poder desplazarse completamente hasta una zona accesible.
 

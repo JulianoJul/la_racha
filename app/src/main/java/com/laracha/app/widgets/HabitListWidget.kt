@@ -36,6 +36,9 @@ import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.height
+import androidx.glance.layout.wrapContentHeight
+import androidx.glance.semantics.contentDescription
+import androidx.glance.semantics.semantics
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
@@ -78,7 +81,7 @@ class HabitListWidget : GlanceAppWidget() {
 private val HabitToday.habitId: String get() = habit.id
 
 @androidx.compose.runtime.Composable
-private fun HabitListContent(
+internal fun HabitListContent(
     appWidgetId: Int,
     habits: List<HabitToday>,
     totalActive: Int,
@@ -86,10 +89,12 @@ private fun HabitListContent(
     size: DpSize,
 ) {
     val compact = size.height < 210.dp
+    val openApp = actionStartActivity<MainActivity>()
     Column(
         modifier = GlanceModifier.fillMaxSize()
             .background(GlanceTheme.colors.widgetBackground)
             .cornerRadius(20.dp)
+            .clickable(openApp)
             .padding(if (compact) 8.dp else 12.dp),
         verticalAlignment = Alignment.Vertical.Top,
     ) {
@@ -97,7 +102,9 @@ private fun HabitListContent(
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.Vertical.CenterVertically,
         ) {
-            Column(modifier = GlanceModifier.defaultWeight()) {
+            Column(
+                modifier = GlanceModifier.defaultWeight().clickable(openApp),
+            ) {
                 Text(
                     "Mis hábitos",
                     style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold),
@@ -121,11 +128,7 @@ private fun HabitListContent(
 
         if (habits.isEmpty()) {
             Column(
-                modifier = GlanceModifier.fillMaxWidth().defaultWeight().clickable(
-                    actionStartActivity<HabitListWidgetConfigurationActivity>(
-                        actionParametersOf(ListWidgetIdKey to appWidgetId),
-                    ),
-                ),
+                modifier = GlanceModifier.fillMaxWidth().defaultWeight().clickable(openApp),
                 verticalAlignment = Alignment.Vertical.CenterVertically,
                 horizontalAlignment = Alignment.Horizontal.CenterHorizontally,
             ) {
@@ -135,7 +138,9 @@ private fun HabitListContent(
                 )
             }
         } else {
-            LazyColumn(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
+            // A full-height ListView consumes taps below its last item. Let short lists
+            // wrap their content so the widget background receives those taps instead.
+            LazyColumn(modifier = GlanceModifier.fillMaxWidth().wrapContentHeight()) {
                 items(habits) { habit ->
                     HabitListRow(habit, compact)
                 }
@@ -145,14 +150,17 @@ private fun HabitListContent(
 }
 
 @androidx.compose.runtime.Composable
-private fun HabitListRow(habit: HabitToday, compact: Boolean) {
+internal fun HabitListRow(habit: HabitToday, compact: Boolean) {
     val openDetail = actionStartDetailActivity(
         Intent(androidx.glance.LocalContext.current, MainActivity::class.java)
             .putExtra("habit_id", habit.habit.id)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
     )
     Row(
-        modifier = GlanceModifier.fillMaxWidth().padding(vertical = if (compact) 1.dp else 3.dp),
+        // Keep the gutter INSIDE each item: padding the LazyColumn moves its scrollbar too.
+        modifier = GlanceModifier.fillMaxWidth()
+            .clickable(actionStartActivity<MainActivity>())
+            .padding(end = 24.dp, top = if (compact) 1.dp else 3.dp, bottom = if (compact) 1.dp else 3.dp),
         verticalAlignment = Alignment.Vertical.CenterVertically,
     ) {
         Row(
@@ -175,7 +183,11 @@ private fun HabitListRow(habit: HabitToday, compact: Boolean) {
         }
         CheckBox(
             checked = habit.completedToday,
-            text = if (habit.completedToday) "Hecho" else "",
+            text = "",
+            modifier = GlanceModifier.size(48.dp).semantics {
+                contentDescription = "${habit.habit.name}, " +
+                    if (habit.completedToday) "completado hoy. Desmarcar" else "pendiente hoy. Completar"
+            },
             onCheckedChange = actionRunCallback<SetHabitCompletionAction>(
                 actionParametersOf(ListActionHabitIdKey to habit.habit.id),
             ),

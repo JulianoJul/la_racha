@@ -19,14 +19,6 @@
         android:textSize="22sp"
         android:textStyle="bold" />
 
-    <ImageView
-        android:layout_width="56dp"
-        android:layout_height="56dp"
-        android:layout_marginTop="8dp"
-        android:src="@drawable/widget_check_pending"
-        android:tint="@color/widget_blue"
-        android:contentDescription="@null" />
-
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -34,12 +26,21 @@
         android:gravity="center"
         android:fontFamily="monospace"
         android:text="@string/preview_weekdays"
-        android:textSize="11sp"
+        android:textSize="13sp"
         android:textColor="#6B7280" />
 
     <ImageView
         android:layout_width="match_parent"
-        android:layout_height="20dp"
-        android:src="@drawable/widget_week_preview"
+        android:layout_height="64dp"
+        android:src="@drawable/widget_day_carousel_preview"
         android:contentDescription="@null" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="center"
+        android:text="@string/preview_single_metric"
+        android:textColor="#526056"
+        android:textSize="12sp" />
 </LinearLayout>

@@ -14,6 +14,15 @@ class StreakCalculatorTest {
     }
 
     @Test
+    fun pendingTodayUsesTwoCompletionsFromYesterdayAndTheDayBefore() {
+        val dayNine = LocalDate.of(2026, 10, 9)
+        val dayTen = LocalDate.of(2026, 10, 10)
+        val dayEleven = LocalDate.of(2026, 10, 11)
+
+        assertEquals(Streaks(2, 2), StreakCalculator.calculate(dayNine, setOf(dayNine, dayTen), dayEleven))
+    }
+
+    @Test
     fun missingYesterdayEndsCurrentStreakButKeepsBest() {
         val history = setOf(created, created.plusDays(1))
         assertEquals(Streaks(0, 2), StreakCalculator.calculate(created, history, created.plusDays(4)))
@@ -26,10 +35,20 @@ class StreakCalculatorTest {
     }
 
     @Test
-    fun neverCountsDaysBeforeCreationOrAfterToday() {
+    fun tracksFromEarliestCompletionAndIgnoresDaysAfterToday() {
         val today = created.plusDays(1)
-        val history = setOf(created.minusDays(3), created, today.plusDays(1))
-        assertEquals(Streaks(1, 1), StreakCalculator.calculate(created, history, today))
+        val history = setOf(created.minusDays(1), created, today.plusDays(1))
+        assertEquals(Streaks(2, 2), StreakCalculator.calculate(created, history, today))
+    }
+
+    @Test
+    fun removingEarliestHistoricalCompletionMovesTrackingStartForward() {
+        val earliest = created.minusDays(2)
+        val next = created.minusDays(1)
+        val history = setOf(earliest, next, created)
+
+        assertEquals(Streaks(3, 3), StreakCalculator.calculate(created, history, created))
+        assertEquals(Streaks(2, 2), StreakCalculator.calculate(created, history - earliest, created))
     }
 
     @Test

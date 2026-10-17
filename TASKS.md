@@ -32,20 +32,22 @@
 ## Hito 5 — Calidad
 - [ ] Widget en launcher real/emulador con pantallas pequeña/grande, modo oscuro y fuente grande.
 - [ ] Reinicio, ahorro batería, sin conexión, cambio local de fecha.
-- [ ] Comprobaciones de consistencia de la DB y recuperaciones por eliminación de hábito.
+- [ ] Ampliar pruebas instrumentadas de Room: hoy solo migración v2→v3 ejecutada; faltan operaciones, FK y recuperación al borrar hábitos.
 - [ ] Manual corto: compilar `assembleDebug`, instalar en dispositivo y añadir widgets.
-- [x] APK `debug` generado localmente; no se declara instalación ni prueba en dispositivo.
+- [x] APK `debug` generado e instalado en SM-A156M; UI quedó sin validar porque el teléfono estaba bloqueado.
 
 ## Ampliación — Google Calendar opt-in (código implementado, validación pendiente)
 - [x] Android Calendar Provider con selector de calendario Google existente, permiso runtime al activar y destino predeterminado para nuevas publicaciones.
 - [x] Opt-in por hábito; series `FREQ=DAILY`, duración RFC 5545, zona horaria y recordatorio opcional.
 - [x] Room v1→v2 no destructiva y operaciones durables con vínculo/propiedad, reconciliación por marcador y WorkManager best-effort para reanudar pendientes.
-- [ ] Exportar/commitear snapshot Room schema v2 mediante KSP durante la validación global (no generado aquí porque no se ejecutó build).
-- [x] Pantalla separada `CalendarIntegrationScreen`; la navegación y el editor de hábitos existente aún deben conectarse.
-- [ ] Ejecutar migración Room real y pruebas de fechas/DST, permisos, duplicados, crash entre provider y Room y revocación.
+- [x] Snapshots Room v1, v2 y v3 exportados mediante KSP.
+- [x] Pantalla `CalendarIntegrationScreen` conectada a Hoy/Ajustes; cambios de nombre/frecuencia enlazados al editor.
+- [x] Migración Room v1→v2 y v2→v3 ejecutada en SQL aislado y migración v2→v3 validada con `MigrationTestHelper` en SM-A156M Android 16.
+- [ ] Probar permisos, proveedor, duplicados, caídas entre provider y Room y revocación; la prueba instrumentada no cubre Calendar.
 - [ ] Validar recurrencia, marcadores y recordatorios en provider de dispositivo; comprobar sincronización efectiva en Google Calendar web/u otro dispositivo (no afirmar éxito antes de esta comprobación).
-- [ ] Integrar pantalla y planificación por hábito en la navegación/editor principal; probar conservar/eliminar en archive/delete de hábitos.
-- [ ] `./gradlew test lint assembleDebug` y prueba manual con calendario/cuenta de QA, después del cierre global coordinado.
+- [x] Integrar pantalla en navegación y conectar conservación/eliminación de series con archive/delete.
+- [ ] Probar flujo visual/launcher, Calendar real y cuenta de QA. Frecuencias no diarias aún no se traducen a Calendar; ver `FREQUENCY-CALENDAR-FINDING.md`.
+- [x] `./gradlew test lint assembleDebug --rerun-tasks` pasó el 2026-10-17: 72 unit tests; lint sin errores.
 
 La exportación publica solo horario/nombre de hábitos opt-in; completados e historial permanecen en Room. El estado «publicado en calendario del dispositivo» no equivale a «sincronizado con Google».
 

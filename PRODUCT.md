@@ -3,7 +3,7 @@
 ## Propósito y estado
 La Racha es una app Android de hábitos, local y utilizable sin conexión, con acceso rápido desde la pantalla de inicio. Registrar una práctica debe requerir uno o dos toques.
 
-Este documento define el comportamiento objetivo. El estado implementado y la última verificación están en `README.md`. La ampliación de frecuencias, historial anterior y mejoras de interacción descritas aquí está **acordada y pendiente de código**.
+Este documento define el comportamiento objetivo. El estado implementado y la última verificación están en `README.md`. El historial anterior y las tres frecuencias están implementados localmente; consultar la evidencia de compilación/migración antes de considerarlos verificados.
 
 ## Principios
 - **Constancia (Habit Score)**: progreso acumulado por hábito, entre 0 y 100 %. Una falta lo reduce gradualmente, no lo reinicia.
@@ -19,9 +19,9 @@ Crear, editar nombre/emoji/color, ordenar, archivar, restaurar y eliminar hábit
 | Frecuencia | Significado | Estado |
 |---|---|---|
 | Diario | Una oportunidad cada día | Implementada |
-| Días fijos | Por ejemplo, lunes/miércoles/viernes; al menos un día elegido | Acordada, pendiente |
-| Cada N días | Intervalo entero positivo desde una fecha de referencia; N=1 equivale a diario | Acordada, pendiente |
-| N veces por semana | Objetivo de 1 a 7 días distintos, sin días fijos | Acordada, pendiente |
+| Días fijos | Por ejemplo, lunes/miércoles/viernes; al menos un día elegido | Implementada |
+| Cada X días | Intervalo entero positivo desde una fecha de referencia; X=1 equivale a diario | Implementada |
+| Días por semana | Objetivo de 1 a 7 días distintos por semana, sin días fijos | Implementada |
 
 Para frecuencias programadas, un día que no toca no es una falta. Para cuotas semanales, no evaluar un incumplimiento antes de cerrar la semana. Calendario local y semanas lunes–domingo. El cálculo, sus casos límite y las decisiones abiertas se concentran en `SCORE.md`.
 
@@ -40,12 +40,13 @@ No confundir frecuencia del hábito con hora/duración de un evento de Calendar.
 ### Hoy
 - Fecha, progreso diario y lista con estado, constancia y racha secundaria.
 - Si el contenido excede la pantalla, ofrecer una señal visible de desplazamiento; nunca tapar el último hábito ni sus controles.
-- Acceso a **Calendar junto a Ajustes** en la cabecera, con etiquetas accesibles. Abrir Calendar no activa la integración.
+- Acceso a **Calendar junto a Ajustes** en la cabecera, con etiquetas accesibles, sin duplicarlo dentro de Ajustes. Abrir Calendar no activa la integración.
 - Cada hábito abre su detalle; su check es una acción independiente.
 - Antes de incorporar frecuencias, definir el denominador del resumen diario y la presentación de hábitos que no tocan hoy; ver decisiones abiertas.
 
 ### Crear/editar
 - Nombre, emoji, color y frecuencia con campos específicos de su modalidad.
+- Las cuatro modalidades se eligen en una única fila desplazable horizontalmente: Diario, Días fijos, Cada X días y Días por semana. El nombre de la cuota semanal no debe sugerir un intervalo fijo entre fechas; sus resúmenes indican, por ejemplo, «3 días por semana».
 - Al abrir **Nuevo hábito**, enfocar nombre y mostrar el teclado automáticamente. No repetir el enfoque al recomponer o sobrescribir lo escrito.
 - Validar nombre y frecuencia antes de guardar; conservar la entrada ante errores.
 
@@ -98,9 +99,8 @@ Toda escritura usa una operación idempotente y transaccional. Tras el commit se
 Los criterios describen aceptación futura, no resultados de pruebas ya realizadas.
 
 ## Decisiones abiertas antes del código afectado
-- Ponderación del score no diario, semanas parciales, marcas fuera de programación y cambios de frecuencia: `SCORE.md`.
 - Presentación y resumen de Hoy para cuotas y días no programados; evitar denominadores que cambien al marcar.
 - Política temporal al archivar/restaurar: decidir cómo tratar ese intervalo al recalcular, sin introducir skips implícitos.
-- Traducción a Calendar de nuevas frecuencias; para cuotas sin días fijados hace falta una planificación explícita.
+- Traducción a Calendar de nuevas frecuencias; bloqueada hasta coordinación específica, especialmente para cuotas sin días fijados.
 
 Fuera del alcance actual: valores numéricos por día, reportes avanzados, recordatorios propios, invitados/ubicaciones Calendar, IA dentro de la app y sincronización bidireccional.

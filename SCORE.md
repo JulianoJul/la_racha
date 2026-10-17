@@ -1,7 +1,7 @@
 # SCORE.md — Constancia, fechas y rachas
 
 ## Contrato y estado
-Este documento es la fuente de las reglas de cálculo. La fórmula **diaria** ya existe; el inicio histórico ampliado y las frecuencias no diarias están acordados pero pendientes de implementación. Las decisiones no aprobadas se identifican al final.
+Este documento es la fuente de las reglas de cálculo. El score diario, el inicio histórico ampliado y las tres modalidades de frecuencia descritas aquí están implementados; la cobertura real de migración/dispositivo debe consultarse en la evidencia de la iteración.
 
 La implementación es original. El suavizado exponencial es una referencia conceptual; no se copia código de Loop Habit Tracker (GPLv3) ni se afirma reproducir su algoritmo completo.
 
@@ -9,7 +9,7 @@ La implementación es original. El suavizado exponencial es una referencia conce
 - `today`: fecha local obtenida de un `Clock` inyectable y la zona actual del dispositivo.
 - `createdOn`: fecha de creación, preservada aunque se registre historia anterior.
 - `completedDays`: conjunto de fechas locales únicas persistidas; no un contador de taps.
-- `trackingStart = min(createdOn, primera marca válida existente)`; si no hay marcas, usar creación. Esta ampliación está pendiente en código.
+- `trackingStart = min(createdOn, primera marca válida existente)`; si no hay marcas, usar creación.
 - Una fecha válida de completado no está en el futuro. La API de escritura debe rechazar fechas futuras; el cálculo no debe premiarlas si recibe datos inválidos.
 - Los días avanzan como fechas (`plusDays`), no como bloques de 24 horas. Semanas locales de lunes a domingo, incluidas las que cruzan mes/año.
 - Un cambio de zona modifica «hoy», no las claves de marcas ya guardadas.
@@ -32,7 +32,7 @@ porcentaje = round(100*S)
 4. Al desmarcar hoy, recomputar el valor hasta ayer, sin castigo adicional.
 5. Redondear solo al presentar. Mantener precisión `Double` durante todo el cálculo y un resultado finito en rango.
 
-La implementación diaria actual parte de creación; al ampliar el historial deberá partir de `trackingStart`. Se debe conservar el resultado de los hábitos que no tienen marcas anteriores.
+El cálculo parte de `trackingStart`. Sin cambios de frecuencia y sin marcas anteriores a la creación, conserva la fórmula diaria existente.
 
 ### Ejemplos de referencia
 Para `n` días perfectos, `S = 1 - a^n`.
@@ -57,29 +57,29 @@ Trece faltas diarias cerradas reducen a la mitad el valor previo. Un día pendie
 
 La interfaz debe explicar esta diferencia. En el widget individual, mostrar racha positiva o, si es cero, constancia positiva; ver `WIDGETS.md`.
 
-## 4. Frecuencias acordadas, pendientes de implementación
+## 4. Frecuencias
 | Modalidad | Unidad de cumplimiento | Regla confirmada |
 |---|---|---|
-| Diario | Día local | Fórmula de la sección 2 |
+| Diario | Día local | Fórmula de la sección 2; alpha por día exigible |
 | Días fijos | Fecha cuyo día semanal está seleccionado | No penalizar fechas fuera de la selección |
-| Cada N días | Fecha congruente con una referencia local módulo N | No penalizar días intermedios; N entero positivo |
-| N veces por semana | N fechas distintas dentro de lunes–domingo | No penalizar la semana abierta antes de su cierre |
+| Cada N días | Fecha congruente con una referencia local módulo N | No penalizar días intermedios; N entero positivo; N=1 equivale a diario |
+| Días por semana | N fechas distintas dentro de lunes–domingo | Al cierre aplicar una actualización semanal fraccional |
 
-En cuotas, varias pulsaciones el mismo día aportan como máximo una fecha. Un objetivo de 3/semana no obliga a completar lunes/martes/miércoles ni convierte el resto de días en fallos.
+Para días fijos e intervalos, cada oportunidad puntúa con `alpha = 0.5^(1/13)`; una fecha libre no actualiza score. Una marca en fecha libre se conserva y cuenta para rachas, pero no para score. La referencia de N días es estable y no se desplaza al añadir historia antigua.
 
-### Diseño de score aún por cerrar
-No basta con añadir un selector de frecuencia y reutilizar el bucle diario. Antes de implementar, fijar con ejemplos y pruebas:
+En cuotas, varias pulsaciones el mismo día aportan como máximo una fecha. Al cerrar una semana completa lunes–domingo, se aplica una actualización con `x = min(completados distintos / objetivo, 1)` y el mismo alpha por **semana cerrada**. El exceso no añade bono y la semana abierta no se evalúa ni penaliza.
+
+El historial de reglas se guarda por fecha efectiva. Una transición entre reglas de oportunidad diaria entra desde mañana; si la regla vigente o la nueva es cuota semanal, la transición espera al próximo lunes para no cortar la semana en curso. El pasado conserva la regla que tenía vigente. Antes del primer período almacenado (por ejemplo, las marcas anteriores a la creación), se mantiene el comportamiento diario histórico.
+
+### Decisión abierta
 
 | Decisión | Qué debe quedar definido |
 |---|---|
-| Ponderación | Si la velocidad de crecimiento/decadencia se mide por oportunidades programadas o por tiempo transcurrido; qué significa la semivida para cada modalidad |
-| Cuota semanal | Cómo contribuyen cumplimiento parcial, objetivo alcanzado y exceso; cómo se refleja progreso en la semana abierta sin penalización anticipada |
-| Semana inicial parcial | Objetivo aplicable al empezar, por ejemplo, un viernes; incluir el inicio ampliado por marcas antiguas |
-| Fuera de programación | Cómo afectan al score las marcas en un día libre o anterior a la referencia de un intervalo; siempre conservar el hecho histórico y su efecto en rachas |
-| Edición de frecuencia | Desde cuándo entra en vigor y si requiere historial de reglas; no reinterpretar silenciosamente el pasado |
 | Archivo/restauración | Corte del cálculo y tratamiento de intervalos archivados, coherente con el contrato de producto |
 
-**Orientación de diseño, no fórmula aprobada:** evaluar solo oportunidades exigibles en días fijos/intervalos, y objetivos semanales en cuotas. La elección del peso de cada unidad debe conservar el caso diario y evitar que una frecuencia baja parezca un incumplimiento permanente. Estas decisiones deben cerrarse en este documento antes del código correspondiente.
+Calendar no publica ni exporta frecuencias no diarias todavía; está bloqueado para estos modos hasta coordinación con el owner de Calendar. No traducir cuotas o reglas de score a recurrencias del proveedor sin acuerdo.
+
+Las cuotas solo se evalúan en semanas lunes–domingo cuyo lunes ya pertenece a un período de cuota; no hay evaluación de una semana parcial antes de ese lunes efectivo.
 
 ## 5. Recomputación y consistencia
 - Recalcular desde las fuentes al corregir historial, cambiar fecha local o restaurar una sesión. No sumar/restar score por pulsación.
@@ -89,7 +89,7 @@ No basta con añadir un selector de frecuencia y reutilizar el bucle diario. Ant
 - Refrescar UI/widgets después de persistir; Android puede retrasar el refresco de un widget. No confundir la hora del refresco con la fecha de la marca.
 
 ## 6. Matriz de pruebas
-Los casos de ampliación son pruebas a añadir/cambiar; no se consideran cubiertos por el recuento histórico de `README.md`.
+La matriz es el contrato de pruebas; un test local no sustituye la validación instrumentada de Room.
 
 | Área | Casos mínimos |
 |---|---|

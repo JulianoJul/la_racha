@@ -13,17 +13,22 @@ object StreakCalculator {
     ): Streaks {
         if (createdOn.isAfter(today)) return Streaks(current = 0, best = 0)
 
+        val trackingStart = completedDays.asSequence()
+            .filterNot { it.isAfter(today) }
+            .minOrNull()
+            ?.let { minOf(createdOn, it) }
+            ?: createdOn
         val currentEndpoint = if (today in completedDays) today else today.minusDays(1)
         var current = 0
         var day = currentEndpoint
-        while (!day.isBefore(createdOn) && day in completedDays) {
+        while (!day.isBefore(trackingStart) && day in completedDays) {
             current++
             day = day.minusDays(1)
         }
 
         var best = 0
         var run = 0
-        day = createdOn
+        day = trackingStart
         while (!day.isAfter(today)) {
             if (day in completedDays) {
                 run++

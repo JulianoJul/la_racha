@@ -9,6 +9,8 @@ import com.laracha.app.HabitApplication
 
 internal val CompletionValueKey = ActionParameters.Key<Boolean>("completion_value")
 
+internal fun singleWidgetCompletionTarget(completedToday: Boolean): Boolean = !completedToday
+
 /** Native checkboxes supply their new state; icon buttons explicitly set the rendered target. */
 internal fun requestedCompletion(parameters: ActionParameters): Boolean? =
     parameters[ToggleableStateKey] ?: parameters[CompletionValueKey]

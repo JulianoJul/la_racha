@@ -25,7 +25,7 @@ class HabitApplication : Application() {
 
     val database: HabitDatabase by lazy {
         Room.databaseBuilder(applicationContext, HabitDatabase::class.java, "la_racha.db")
-            .addMigrations(com.laracha.app.data.MIGRATION_1_2)
+            .addMigrations(com.laracha.app.data.MIGRATION_1_2, com.laracha.app.data.MIGRATION_2_3)
             .build()
     }
 

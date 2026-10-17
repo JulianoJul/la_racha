@@ -47,14 +47,15 @@ Indicadores semanales del widget: azul `#2563EB` / `#8AB4FF` para hoy; gris `#6B
 ## Componentes y flujos
 ### Hoy
 - Cabecera con fecha/progreso y accesos Calendar y Ajustes juntos, identificables por TalkBack.
-- Fila con emoji, nombre, métricas secundarias y check independiente. Tocar información abre detalle.
+- Fila con emoji y nombre, constancia en una segunda línea y días de racha en una tercera, con check independiente. Tocar información abre detalle. La tarjeta de progreso muestra «Hoy» sin el mensaje «Un día cada vez».
 - Lista desplazable con señal visible cuando hay contenido fuera del viewport. Puede ser una barra/indicador discreto; su visibilidad debe responder al desbordamiento y no tapar controles.
 - Última fila accesible por encima de acciones fijas e insets. Evitar un indicador permanente cuando todo cabe.
 
 ### Editor
 - En Nuevo hábito, enfocar nombre y mostrar teclado una vez al entrar.
 - Mantener accesibles los campos/acciones con el teclado abierto; preservar entrada ante validación.
-- Mostrar solo los controles necesarios para la frecuencia elegida. Usar ejemplos comprensibles: «Lun, mié y vie», «Cada 3 días», «3 veces por semana».
+- Las cuatro modalidades están en una sola fila con scroll horizontal: «Diario», «Días fijos», «Cada X días», «Días por semana». En la cuota semanal, mostrar debajo «Días distintos por semana (1–7)» para explicar su objetivo. Ejemplos: «Lun, mié y vie», «Cada 3 días», «3 días por semana».
+- Calendar solo se abre desde la cabecera de Hoy, no desde Ajustes. Sus cuatro opciones de recordatorio se distribuyen en dos filas de dos botones de igual ancho, sin huecos ni opciones fuera de pantalla.
 
 ### Detalle e historial
 - Score destacado con etiqueta «Constancia»; rachas actual/mejor diferenciadas.
@@ -63,9 +64,10 @@ Indicadores semanales del widget: azul `#2563EB` / `#8AB4FF` para hoy; gris `#6B
 - Dar feedback al guardar o ante error, sin saltar de mes o perder posición innecesariamente.
 
 ### Widgets
-- Individual 2×2: emoji/nombre, fila semanal como único check de hoy y una métrica positiva opcional. No conservar el check grande adicional del diseño anterior.
+- Individual 2×2: emoji/nombre, carrusel de fechas con hoy grande en el centro, vecinos a ambos lados y una métrica positiva opcional. Priorizar círculos legibles sobre ver los siete días. No añadir otro check separado.
 - Hoy azul; resto gris; completados con check recortado transparente. Métrica: `🔥 N` si N>0, en otro caso porcentaje positivo, o sin métrica.
-- Lista: filas compactas y desplazamiento real, con espacio lateral reservado a la barra para que nunca pase sobre checks.
+- Lista: filas compactas y desplazamiento real, con espacio lateral reservado a la barra para que nunca pase sobre checks. Sin texto visible «nombre: pendiente/completado» junto al check; conservar nombre/estado como descripción accesible.
+- Fondo y espacios vacíos de la lista abren la app; información de cada hábito abre su detalle y checks/«Editar» conservan sus acciones propias.
 - Configuración de lista: «Todos» y «Elegidos» separados por 12dp.
 - Verificar áreas táctiles y restricciones reales en launcher; no asumir que un composable de app funciona igual en Glance.
 

@@ -5,6 +5,9 @@ import com.laracha.app.domain.LocalDay
 import com.laracha.app.domain.StreakCalculator
 import com.laracha.app.domain.HabitWeek
 import com.laracha.app.domain.HabitWeekDay
+import com.laracha.app.domain.HabitFrequency
+import com.laracha.app.domain.FrequencyPeriod
+import com.laracha.app.domain.HabitFrequencyRules
 import java.time.Clock
 import java.time.LocalDate
 import java.time.ZoneId
@@ -29,6 +32,8 @@ data class HabitToday(
     val currentStreak: Int,
     val bestStreak: Int,
     val week: List<HabitWeekDay> = emptyList(),
+    val frequency: HabitFrequency = HabitFrequency.Daily,
+    val daysAroundToday: List<HabitWeekDay> = emptyList(),
 )
 
 data class HabitDetail(
@@ -37,6 +42,9 @@ data class HabitDetail(
     val scorePercent: Int,
     val currentStreak: Int,
     val bestStreak: Int,
+    val frequency: HabitFrequency = HabitFrequency.Daily,
+    val frequencyPeriods: List<FrequencyPeriod> = emptyList(),
+    val nextFrequency: FrequencyPeriod? = null,
 )
 
 class HabitRepository(
@@ -53,16 +61,18 @@ class HabitRepository(
     fun today(): LocalDate = LocalDay.today(clock, zoneId())
 
     fun observeToday(forDate: LocalDate = today()): Flow<List<HabitToday>> =
-        combine(dao.observeActiveHabits(), dao.observeCompletions()) { habits, completions ->
-            calculateToday(habits, completions, forDate)
+        combine(dao.observeActiveHabits(), dao.observeCompletions()) { habits, completions -> habits to completions }
+            .combine(dao.observeAllFrequencyPeriods()) { (habits, completions), periods ->
+                calculateToday(habits, completions, periods, forDate)
         }.flowOn(Dispatchers.Default)
 
     /** Live day-key source for long-lived Glance sessions; updates on local date rollover. */
     fun observeCurrentToday(): Flow<List<HabitToday>> = combine(
         dao.observeActiveHabits(),
         dao.observeCompletions(),
+        dao.observeAllFrequencyPeriods(),
         localDayFlow(),
-    ) { habits, completions, currentDay -> calculateToday(habits, completions, currentDay) }
+    ) { habits, completions, periods, currentDay -> calculateToday(habits, completions, periods, currentDay) }
         .flowOn(Dispatchers.Default)
 
     private fun localDayFlow(): Flow<LocalDate> = flow {
@@ -80,14 +90,18 @@ class HabitRepository(
     private fun calculateToday(
         habits: List<HabitEntity>,
         completions: List<CompletionEntity>,
+        frequencyRows: List<HabitFrequencyPeriodEntity>,
         forDate: LocalDate,
     ): List<HabitToday> {
         val daysByHabit = completions.groupBy(CompletionEntity::habitId)
             .mapValues { (_, rows) -> rows.mapTo(mutableSetOf()) { LocalDate.parse(it.localDate) } }
+        val periodsByHabit = frequencyRows.groupBy(HabitFrequencyPeriodEntity::habitId)
+            .mapValues { (_, rows) -> rows.map(HabitFrequencyPeriodEntity::toDomain) }
         return habits.map { habit ->
             val completedDays = daysByHabit[habit.id].orEmpty()
             val createdOn = LocalDate.parse(habit.createdOn)
-            val score = HabitScoreCalculator.calculate(createdOn, completedDays, forDate)
+            val periods = periodsByHabit[habit.id].orEmpty()
+            val score = HabitScoreCalculator.calculate(createdOn, completedDays, forDate, periods)
             val streaks = StreakCalculator.calculate(createdOn, completedDays, forDate)
             HabitToday(
                 habit = habit,
@@ -96,6 +110,9 @@ class HabitRepository(
                 currentStreak = streaks.current,
                 bestStreak = streaks.best,
                 week = HabitWeek.days(createdOn, completedDays, forDate),
+                daysAroundToday = HabitWeek.daysAroundToday(createdOn, completedDays, forDate),
+                frequency = periods.lastOrNull { !it.effectiveFrom.isAfter(forDate) }?.frequency
+                    ?: HabitFrequency.Daily,
             )
         }
     }
@@ -109,11 +126,13 @@ class HabitRepository(
         }.flowOn(Dispatchers.Default)
 
     fun observeDetail(habitId: String, forDate: LocalDate = today()): Flow<HabitDetail?> =
-        combine(dao.observeHabit(habitId), dao.observeCompletionsForHabit(habitId)) { habit, rows ->
+        combine(dao.observeHabit(habitId), dao.observeCompletionsForHabit(habitId)) { habit, rows -> habit to rows }
+            .combine(dao.observeFrequencyPeriods(habitId)) { (habit, rows), frequencyRows ->
             habit?.let {
                 val completedDays = rows.mapTo(mutableSetOf()) { LocalDate.parse(it.localDate) }
                 val createdOn = LocalDate.parse(it.createdOn)
-                val score = HabitScoreCalculator.calculate(createdOn, completedDays, forDate)
+                val periods = frequencyRows.map(HabitFrequencyPeriodEntity::toDomain)
+                val score = HabitScoreCalculator.calculate(createdOn, completedDays, forDate, periods)
                 val streaks = StreakCalculator.calculate(createdOn, completedDays, forDate)
                 HabitDetail(
                     habit = it,
@@ -121,11 +140,20 @@ class HabitRepository(
                     scorePercent = HabitScoreCalculator.percentage(score),
                     currentStreak = streaks.current,
                     bestStreak = streaks.best,
+                    frequency = periods.lastOrNull { period -> !period.effectiveFrom.isAfter(forDate) }?.frequency
+                        ?: HabitFrequency.Daily,
+                    frequencyPeriods = periods,
+                    nextFrequency = periods.firstOrNull { period -> period.effectiveFrom.isAfter(forDate) },
                 )
             }
         }.flowOn(Dispatchers.Default)
 
-    suspend fun createHabit(name: String, emoji: String, color: String): String {
+    suspend fun createHabit(
+        name: String,
+        emoji: String,
+        color: String,
+        frequency: HabitFrequency = HabitFrequency.Daily,
+    ): String {
         val trimmedName = name.trim()
         require(trimmedName.isNotEmpty()) { "El nombre no puede estar vacío" }
         val id = UUID.randomUUID().toString()
@@ -136,7 +164,7 @@ class HabitRepository(
                 emoji = emoji,
                 color = color,
                 createdOn = today().toString(),
-            ),
+            ).withFrequency(frequency),
         )
         refreshWidgetsAfterCommit()
         return id
@@ -150,10 +178,20 @@ class HabitRepository(
         refreshWidgetsAfterCommit()
     }
 
+    suspend fun updateFrequency(habitId: String, frequency: HabitFrequency): Boolean {
+        val current = dao.getHabit(habitId) ?: return false
+        val currentFrequency = current.frequency()
+        if (currentFrequency == frequency) return false
+        val effectiveFrom = HabitFrequencyRules.effectiveFrom(currentFrequency, frequency, today())
+        val changed = dao.updateFrequency(habitId, frequency, effectiveFrom)
+        if (changed) refreshWidgetsAfterCommit()
+        return changed
+    }
+
     suspend fun setCompleted(habitId: String, date: LocalDate = today(), completed: Boolean): Boolean {
         val habit = dao.getHabit(habitId) ?: return false
         val currentToday = today()
-        if (date.isBefore(LocalDate.parse(habit.createdOn)) || date.isAfter(currentToday)) return false
+        if (date.isAfter(currentToday)) return false
         val changed = dao.setCompleted(habitId, date.toString(), completed)
         if (changed) refreshWidgetsAfterCommit()
         return changed
@@ -177,3 +215,11 @@ class HabitRepository(
 
     fun observeHabits(): Flow<List<HabitEntity>> = dao.observeAllHabits()
 }
+
+private fun HabitEntity.withFrequency(frequency: HabitFrequency): HabitEntity = copy(
+    frequencyType = frequency.typeCode(),
+    frequencyDays = frequency.daysCode(),
+    frequencyIntervalDays = (frequency as? HabitFrequency.EveryNDays)?.intervalDays ?: 1,
+    frequencyReferenceDate = (frequency as? HabitFrequency.EveryNDays)?.referenceDate?.toString(),
+    frequencyWeeklyTarget = (frequency as? HabitFrequency.WeeklyQuota)?.timesPerWeek ?: 1,
+)

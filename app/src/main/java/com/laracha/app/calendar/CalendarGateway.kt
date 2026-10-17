@@ -66,7 +66,8 @@ class AndroidCalendarGateway(private val context: Context) : CalendarGateway {
             CalendarContract.Calendars.ALLOWED_REMINDERS,
             CalendarContract.Calendars.MAX_REMINDERS,
         )
-        resolver.query(CalendarContract.Calendars.CONTENT_URI, projection, "${CalendarContract.Calendars.ACCOUNT_TYPE} = ? AND ${CalendarContract.Calendars.SYNC_EVENTS} = 1", arrayOf("com.google"), "${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} COLLATE NOCASE")?.use { cursor ->
+        (resolver.query(CalendarContract.Calendars.CONTENT_URI, projection, "${CalendarContract.Calendars.ACCOUNT_TYPE} = ? AND ${CalendarContract.Calendars.SYNC_EVENTS} = 1", arrayOf("com.google"), "${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} COLLATE NOCASE")
+            ?: throw CalendarUnavailableException("No se pudo leer la lista de calendarios")).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
                     val access = cursor.getInt(5)
@@ -76,7 +77,7 @@ class AndroidCalendarGateway(private val context: Context) : CalendarGateway {
                     }
                 }
             }
-        }.orEmpty()
+        }
     }
 
     override suspend fun publish(calendarId: Long, habitName: String, schedule: HabitCalendarScheduleEntity, token: String, binding: CalendarEventBindingEntity?): GatewayResult = withContext(Dispatchers.IO) {
@@ -144,42 +145,45 @@ class AndroidCalendarGateway(private val context: Context) : CalendarGateway {
     }
 
     private fun replaceReminder(eventId: Long, previouslyManagedMinutes: Int?, minutes: Int) {
-        val existing = resolver.query(CalendarContract.Reminders.CONTENT_URI, arrayOf(CalendarContract.Reminders._ID, CalendarContract.Reminders.MINUTES, CalendarContract.Reminders.METHOD), "${CalendarContract.Reminders.EVENT_ID} = ?", arrayOf(eventId.toString()), null)?.use { cursor ->
-            buildList { while (cursor.moveToNext()) add(Triple(cursor.getLong(0), cursor.getInt(1), cursor.getInt(2))) }
-        }.orEmpty()
-        val managed = existing.filter { (_, oldMinutes, method) -> previouslyManagedMinutes != null && oldMinutes == previouslyManagedMinutes && method == CalendarContract.Reminders.METHOD_ALERT }
-        managed.forEach { (id, _, _) -> resolver.delete(ContentUris.withAppendedId(CalendarContract.Reminders.CONTENT_URI, id), null, null) }
-        val alreadyPresent = existing.any { (_, existingMinutes, method) -> existingMinutes == minutes && method == CalendarContract.Reminders.METHOD_ALERT }
-        if (minutes >= 0 && !alreadyPresent) {
-            val values = ContentValues().apply { put(CalendarContract.Reminders.EVENT_ID, eventId); put(CalendarContract.Reminders.MINUTES, minutes); put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT) }
+        val existing = (resolver.query(CalendarContract.Reminders.CONTENT_URI, arrayOf(CalendarContract.Reminders._ID, CalendarContract.Reminders.MINUTES, CalendarContract.Reminders.METHOD), "${CalendarContract.Reminders.EVENT_ID} = ?", arrayOf(eventId.toString()), null)
+            ?: throw CalendarUnavailableException("No se pudieron leer los recordatorios")).use { cursor ->
+            buildList { while (cursor.moveToNext()) add(ReminderRow(cursor.getLong(0), cursor.getInt(1), cursor.getInt(2))) }
+        }
+        val change = reminderChange(existing, previouslyManagedMinutes, minutes, CalendarContract.Reminders.METHOD_ALERT)
+        change.deleteIds.forEach { id -> resolver.delete(ContentUris.withAppendedId(CalendarContract.Reminders.CONTENT_URI, id), null, null) }
+        if (change.insertMinutes != null) {
+            val values = ContentValues().apply { put(CalendarContract.Reminders.EVENT_ID, eventId); put(CalendarContract.Reminders.MINUTES, change.insertMinutes); put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT) }
             resolver.insert(CalendarContract.Reminders.CONTENT_URI, values) ?: error("El proveedor rechazó el recordatorio")
         }
     }
 
     private fun findOwnedEvent(calendarId: Long, token: String): GatewayResult {
         val projection = arrayOf(CalendarContract.Events._ID, CalendarContract.Events.DESCRIPTION, CalendarContract.Events.CALENDAR_ID)
-        val hits = resolver.query(CalendarContract.Events.CONTENT_URI, projection, "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events.DESCRIPTION} LIKE ? AND ${CalendarContract.Events.DELETED} = 0", arrayOf(calendarId.toString(), "%${marker(token)}%"), null)?.use { cursor ->
+        val hits = (resolver.query(CalendarContract.Events.CONTENT_URI, projection, "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events.DESCRIPTION} LIKE ? AND ${CalendarContract.Events.DELETED} = 0", arrayOf(calendarId.toString(), "%${marker(token)}%"), null)
+            ?: throw CalendarUnavailableException("No se pudo comprobar la serie en Calendar")).use { cursor ->
             buildList { while (cursor.moveToNext()) if (cursor.getString(1).orEmpty().contains(marker(token))) add(cursor.getLong(0)) }
-        }.orEmpty()
+        }
         return when (hits.size) { 0 -> GatewayResult.Missing; 1 -> GatewayResult.Published(ManagedSeries(hits.single(), token)); else -> GatewayResult.Ambiguous }
     }
 
     private fun verifyOwned(calendarId: Long, eventId: Long, token: String): Boolean {
         val projection = arrayOf(CalendarContract.Events._ID, CalendarContract.Events.CALENDAR_ID, CalendarContract.Events.DESCRIPTION, CalendarContract.Events.DELETED)
-        return resolver.query(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId), projection, null, null, null)?.use { cursor ->
+        return (resolver.query(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId), projection, null, null, null)
+            ?: throw CalendarUnavailableException("No se pudo verificar la identidad de la serie")).use { cursor ->
             cursor.moveToFirst() && cursor.getLong(1) == calendarId && cursor.getInt(3) == 0 && cursor.getString(2).orEmpty().contains(marker(token))
-        } ?: false
+        }
     }
 
     private fun marker(token: String) = "[LaRacha:$token]"
 
     private fun ensureTrustedCalendar(calendarId: Long, binding: CalendarEventBindingEntity?) {
         val projection = arrayOf(CalendarContract.Calendars._ID, CalendarContract.Calendars.ACCOUNT_NAME, CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, CalendarContract.Calendars.SYNC_EVENTS)
-        val trusted = resolver.query(ContentUris.withAppendedId(CalendarContract.Calendars.CONTENT_URI, calendarId), projection, null, null, null)?.use { cursor ->
+        val trusted = (resolver.query(ContentUris.withAppendedId(CalendarContract.Calendars.CONTENT_URI, calendarId), projection, null, null, null)
+            ?: throw CalendarUnavailableException("No se pudo verificar el calendario de destino")).use { cursor ->
             cursor.moveToFirst() && cursor.getString(2) == "com.google" && cursor.getInt(3) >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR &&
                 cursor.getInt(4) == 1 && (binding?.accountName.isNullOrEmpty() || cursor.getString(1) == binding?.accountName) &&
                 (binding?.accountType.isNullOrEmpty() || cursor.getString(2) == binding?.accountType)
-        } ?: false
+        }
         if (!trusted) throw CalendarUnavailableException("El calendario Google seleccionado ya no está disponible o no permite escribir")
     }
 

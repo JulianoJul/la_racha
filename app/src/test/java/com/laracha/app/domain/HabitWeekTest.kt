@@ -44,11 +44,13 @@ class HabitWeekTest {
     }
 
     @Test
-    fun futureAndPreCreationRowsCannotShowAsCompleted() {
+    fun futureIsNeverCompletedAndOldCompletionExtendsVisibleHistory() {
         val days = HabitWeek.days(today, setOf(today.minusDays(1), today, today.plusDays(1)), today)
 
-        assertEquals(listOf(today), days.filter { it.completed }.map { it.date })
-        assertTrue(days.filterNot { it.isToday }.none { it.available })
+        assertEquals(listOf(today.minusDays(1), today), days.filter { it.completed }.map { it.date })
+        assertTrue(days.single { it.date == today.minusDays(1) }.available)
+        assertFalse(days.last().completed)
+        assertFalse(days.last().available)
     }
 
     @Test
@@ -77,5 +79,44 @@ class HabitWeekTest {
 
         assertEquals(LocalDate.of(2026, 11, 1), days.last().date)
         assertTrue(days.last().isToday)
+    }
+
+    @Test
+    fun carouselKeepsTodayInTheMiddleForEveryWeekday() {
+        val monday = LocalDate.of(2026, 10, 19)
+        repeat(7) { offset ->
+            val current = monday.plusDays(offset.toLong())
+            val days = HabitWeek.daysAroundToday(current.minusWeeks(1), emptySet(), current)
+
+            assertEquals(7, days.size)
+            assertEquals(current, days[3].date)
+            assertEquals(listOf(current), days.filter { it.isToday }.map { it.date })
+            assertEquals(current.minusDays(3), days.first().date)
+            assertEquals(current.plusDays(3), days.last().date)
+        }
+    }
+
+    @Test
+    fun mondayCarouselIncludesRealPreviousWeekHistoryAndInactiveFuture() {
+        val monday = LocalDate.of(2026, 10, 19)
+        val sunday = monday.minusDays(1)
+        val days = HabitWeek.daysAroundToday(monday, setOf(sunday, monday.plusDays(1)), monday)
+
+        assertEquals("D", days[2].initial)
+        assertTrue(days[2].completed)
+        assertTrue(days[2].available)
+        assertFalse(days[2].isToday)
+        assertEquals("L", days[3].initial)
+        assertTrue(days.drop(4).none { it.completed || it.available })
+    }
+
+    @Test
+    fun carouselCrossesYearBoundaryWithoutWrappingWeekdaysToTheWrongDate() {
+        val newYear = LocalDate.of(2027, 1, 1)
+        val days = HabitWeek.daysAroundToday(newYear.minusWeeks(1), emptySet(), newYear)
+
+        assertEquals(LocalDate.of(2026, 12, 29), days.first().date)
+        assertEquals(LocalDate.of(2027, 1, 4), days.last().date)
+        assertEquals(listOf("M", "M", "J", "V", "S", "D", "L"), days.map { it.initial })
     }
 }

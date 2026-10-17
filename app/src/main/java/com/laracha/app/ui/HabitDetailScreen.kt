@@ -54,7 +54,9 @@ import com.laracha.app.data.HabitRepository
 import com.laracha.app.domain.CalendarMonth
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.DayOfWeek
 import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 import kotlinx.coroutines.launch
 
@@ -100,13 +102,15 @@ fun HabitDetailScreen(
                     }
                 }
             } else {
-                item { DetailHeader(current) }
+                item { DetailHeader(current, today) }
                 item {
                     CalendarCard(
                         detail = current,
                         today = today,
                         shownMonth = shownMonth,
-                        canGoBack = shownMonth.isAfter(YearMonth.from(LocalDate.parse(current.habit.createdOn))),
+                        // The calendar must be able to reach dates before both creation and
+                        // the first historical completion, otherwise that first mark is impossible.
+                        canGoBack = shownMonth.isAfter(YearMonth.of(1, 1)),
                         canGoForward = monthOffset < 0,
                         onPreviousMonth = { monthOffset-- },
                         onNextMonth = { if (monthOffset < 0) monthOffset++ },
@@ -119,7 +123,7 @@ fun HabitDetailScreen(
                 }
                 item {
                     Text(
-                        "Toca cualquier día desde que creaste el hábito para corregir el historial. Hoy sigue pendiente hasta que termine el día.",
+                        "Toca hoy o cualquier día pasado para corregir el historial, incluso antes de crear el hábito. Hoy sigue pendiente hasta que termine el día.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 4.dp),
@@ -131,7 +135,7 @@ fun HabitDetailScreen(
 }
 
 @Composable
-private fun DetailHeader(detail: HabitDetail) {
+private fun DetailHeader(detail: HabitDetail, today: LocalDate) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -148,6 +152,26 @@ private fun DetailHeader(detail: HabitDetail) {
             MetricCard("Constancia", "${detail.scorePercent}%", Modifier.fillMaxWidth())
             MetricCard("Racha actual", "${detail.currentStreak} días", Modifier.fillMaxWidth())
             MetricCard("Mejor racha", "${detail.bestStreak} días", Modifier.fillMaxWidth())
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Frecuencia: ${detail.frequency.label()}", style = MaterialTheme.typography.bodyMedium)
+            val nextFrequency = detail.nextFrequency
+            if (nextFrequency != null) {
+                Text(
+                    "${nextFrequency.frequency.label()} desde ${nextFrequency.effectiveFrom.format(DateTimeFormatter.ofPattern("d MMM", DetailLocale))}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            (detail.frequency as? com.laracha.app.domain.HabitFrequency.WeeklyQuota)?.let { quota ->
+                val weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                val completed = detail.completedDays.count { !it.isBefore(weekStart) && !it.isAfter(today) }
+                Text(
+                    "Esta semana: ${completed.coerceAtMost(quota.timesPerWeek)} / ${quota.timesPerWeek} días completados",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -240,8 +264,7 @@ private fun CalendarDay(
         return
     }
 
-    val createdOn = LocalDate.parse(detail.habit.createdOn)
-    val enabled = !date.isBefore(createdOn) && !date.isAfter(today)
+    val enabled = !date.isAfter(today)
     val completed = date in detail.completedDays
     val isToday = date == today
     val monthDate = date.format(DateTimeFormatter.ofPattern("EEEE d MMMM", DetailLocale))

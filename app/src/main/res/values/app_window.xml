@@ -1,0 +1,10 @@
+<resources>
+    <color name="app_window_background">#F4F5F1</color>
+    <style name="Theme.LaRacha" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/app_window_background</item>
+        <item name="android:statusBarColor">@color/app_window_background</item>
+        <item name="android:navigationBarColor">@color/app_window_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorAccent">#437A54</item>
+    </style>
+</resources>

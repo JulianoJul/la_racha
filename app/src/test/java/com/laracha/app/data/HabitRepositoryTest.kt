@@ -1,6 +1,8 @@
 package com.laracha.app.data
 
 import com.laracha.app.domain.HabitScoreCalculator
+import com.laracha.app.domain.HabitFrequency
+import com.laracha.app.domain.FrequencyPeriod
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -78,6 +80,7 @@ class HabitRepositoryTest {
         assertEquals("Leer", created?.name)
         assertEquals(1, created?.sortOrder)
         assertEquals(today.toString(), created?.createdOn)
+        assertEquals("DAILY", created?.frequencyType)
     }
 
     @Test
@@ -120,14 +123,83 @@ class HabitRepositoryTest {
     }
 
     @Test
-    fun repositoryRejectsCompletionBeforeCreationAndAfterToday() = runBlocking {
+    fun widgetCarouselReadsPreviousWeekCompletionsAndUpdatesAfterEdits() = runBlocking {
+        val monday = LocalDate.of(2026, 10, 19)
+        val dao = FakeHabitDao()
+        dao.insertHabit(habit(createdOn = monday))
+        dao.putCompletion(CompletionEntity("habit", monday.minusDays(1).toString()))
+        val mondayClock = Clock.fixed(Instant.parse("2026-10-19T12:00:00Z"), ZoneOffset.UTC)
+        val repository = HabitRepository(dao, mondayClock, ZoneOffset.UTC)
+
+        val before = repository.observeToday().first().single().daysAroundToday
+        assertEquals(monday, before[3].date)
+        assertTrue(before[2].completed)
+        assertTrue(before[2].available)
+        assertTrue(before.drop(4).none { it.completed || it.available })
+
+        repository.setCompleted("habit", monday.minusDays(1), false)
+        val after = repository.observeToday().first().single().daysAroundToday
+        assertFalse(after[2].completed)
+        assertFalse(after[2].available)
+        assertEquals(before.map { it.date }, after.map { it.date })
+    }
+
+    @Test
+    fun repositoryAllowsCompletionBeforeCreationButRejectsFuture() = runBlocking {
         val dao = FakeHabitDao()
         dao.insertHabit(habit(createdOn = today.minusDays(1)))
         val repository = HabitRepository(dao, clock, ZoneOffset.UTC)
 
-        assertFalse(repository.setCompleted("habit", today.minusDays(2), true))
+        assertTrue(repository.setCompleted("habit", today.minusDays(2), true))
         assertFalse(repository.setCompleted("habit", today.plusDays(1), true))
-        assertTrue(dao.completions.value.isEmpty())
+        assertEquals(listOf(today.minusDays(2).toString()), dao.completions.value.map(CompletionEntity::localDate))
+    }
+
+    @Test
+    fun removingOldestHistoricalCompletionRecomputesDetailFromNextCompletion() = runBlocking {
+        val createdOn = today.minusDays(1)
+        val earliest = today.minusDays(3)
+        val next = today.minusDays(2)
+        val dao = FakeHabitDao()
+        dao.insertHabit(habit(createdOn = createdOn))
+        listOf(earliest, next, createdOn).forEach { date ->
+            dao.putCompletion(CompletionEntity("habit", date.toString()))
+        }
+        val repository = HabitRepository(dao, clock, ZoneOffset.UTC)
+
+        val before = repository.observeDetail("habit", today).first()!!
+        assertTrue(repository.setCompleted("habit", earliest, false))
+        val after = repository.observeDetail("habit", today).first()!!
+
+        assertEquals(3, before.bestStreak)
+        assertEquals(2, after.bestStreak)
+        assertEquals(
+            HabitScoreCalculator.percentage(
+                HabitScoreCalculator.calculate(next, setOf(next, createdOn), today),
+            ),
+            after.scorePercent,
+        )
+    }
+
+    @Test
+    fun changingFrequencyKeepsPriorScoreAndPersistsEffectivePeriod() = runBlocking {
+        val createdOn = today.minusDays(8)
+        val dao = FakeHabitDao()
+        dao.insertHabit(habit(createdOn = createdOn))
+        (0L..7L).forEach { offset ->
+            dao.putCompletion(CompletionEntity("habit", createdOn.plusDays(offset).toString()))
+        }
+        val repository = HabitRepository(dao, clock, ZoneOffset.UTC)
+        val before = repository.observeDetail("habit", today).first()!!
+        val updatedFrequency = HabitFrequency.FixedDays(setOf(java.time.DayOfWeek.MONDAY, java.time.DayOfWeek.FRIDAY))
+
+        repository.updateFrequency("habit", updatedFrequency)
+        val after = repository.observeDetail("habit", today).first()!!
+
+        assertEquals(before.scorePercent, after.scorePercent)
+        assertEquals(HabitFrequency.Daily, after.frequency)
+        assertEquals(updatedFrequency, after.nextFrequency?.frequency)
+        assertEquals(today.plusDays(1), after.frequencyPeriods.last().effectiveFrom)
     }
 
     @Test
@@ -189,6 +261,7 @@ class HabitRepositoryTest {
 private class FakeHabitDao : HabitDao() {
     private val habits = MutableStateFlow<List<HabitEntity>>(emptyList())
     val completions = MutableStateFlow<List<CompletionEntity>>(emptyList())
+    private val frequencies = MutableStateFlow<List<HabitFrequencyPeriodEntity>>(emptyList())
 
     override fun observeActiveHabits() = habits.map { all -> all.filter { it.archivedOn == null } }
 
@@ -206,12 +279,33 @@ private class FakeHabitDao : HabitDao() {
     override fun observeCompletionsForHabit(habitId: String) =
         completions.map { rows -> rows.filter { it.habitId == habitId }.sortedBy(CompletionEntity::localDate) }
 
+    override fun observeFrequencyPeriods(habitId: String) =
+        frequencies.map { rows -> rows.filter { it.habitId == habitId }.sortedBy(HabitFrequencyPeriodEntity::effectiveFrom) }
+
+    override fun observeAllFrequencyPeriods() = frequencies
+
     override suspend fun insertHabit(habit: HabitEntity) {
         habits.value = habits.value + habit
+        frequencies.value = frequencies.value + HabitFrequencyPeriodEntity.from(habit.id, LocalDate.parse(habit.createdOn), HabitFrequency.Daily)
     }
 
     override suspend fun updateHabit(habit: HabitEntity) {
         habits.value = habits.value.map { if (it.id == habit.id) habit else it }
+    }
+
+    override suspend fun getFrequencyPeriods(habitId: String) =
+        frequencies.value.filter { it.habitId == habitId }.sortedBy(HabitFrequencyPeriodEntity::effectiveFrom)
+
+    override suspend fun deleteFrequencyPeriodsFrom(habitId: String, effectiveFrom: String) {
+        frequencies.value = frequencies.value.filterNot {
+            it.habitId == habitId && it.effectiveFrom >= effectiveFrom
+        }
+    }
+
+    override suspend fun insertFrequencyPeriod(period: HabitFrequencyPeriodEntity) {
+        frequencies.value = frequencies.value.filterNot {
+            it.habitId == period.habitId && it.effectiveFrom == period.effectiveFrom
+        } + period
     }
 
     override suspend fun putCompletion(completion: CompletionEntity) {

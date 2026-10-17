@@ -15,6 +15,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** Durable intent first, then provider side effects. A provider call is never made by completion actions. */
+enum class PublicationOutcome { PUBLISHED_LOCAL, PENDING, BLOCKED }
+
 class CalendarExportCoordinator(
     private val habits: HabitDao,
     private val calendar: CalendarDao,
@@ -23,6 +25,8 @@ class CalendarExportCoordinator(
     private val clock: Clock = Clock.systemDefaultZone(),
 ) {
     private val drainMutex = Mutex()
+    /** Serializes durable revision allocation and the corresponding provider drain in this process. */
+    private val intentMutex = Mutex()
     suspend fun requestPublication(
         habitId: String,
         calendarId: Long,
@@ -32,8 +36,8 @@ class CalendarExportCoordinator(
         durationMinutes: Int,
         zoneId: ZoneId,
         reminderMinutes: Int = -1,
-    ) {
-        require(durationMinutes in 1..1440) { "La duración debe estar entre 1 y 1440 minutos" }
+    ): PublicationOutcome = intentMutex.withLock {
+        requireValidDuration(durationMinutes)
         require(reminderMinutes in setOf(-1, 0, 10, 30)) { "Recordatorio no permitido" }
         val habit = requireNotNull(habits.getHabit(habitId)) { "Hábito no encontrado" }
         require(habit.archivedOn == null) { "No se puede exportar un hábito archivado" }
@@ -48,9 +52,14 @@ class CalendarExportCoordinator(
         calendar.saveDesired(schedule, operation, destinationBinding)
         enqueueRetry()
         drain()
+        when {
+            calendar.getBinding(habitId)?.let { it.publishedRevision == revision && it.state == "PUBLISHED_LOCAL" } == true -> PublicationOutcome.PUBLISHED_LOCAL
+            calendar.getOperation(operation.operationId)?.state == "BLOCKED" -> PublicationOutcome.BLOCKED
+            else -> PublicationOutcome.PENDING
+        }
     }
 
-    suspend fun requestDisable(habitId: String, deleteSeries: Boolean) {
+    suspend fun requestDisable(habitId: String, deleteSeries: Boolean) = intentMutex.withLock {
         val previous = calendar.getSchedule(habitId)
         val binding = calendar.getBinding(habitId) ?: return
         val revision = (previous?.revision ?: binding.publishedRevision) + 1
@@ -96,7 +105,13 @@ class CalendarExportCoordinator(
                         calendar.finish(operation.operationId, binding?.copy(state = "DETACHED"), "DONE")
                         continue
                     }
-                    when (val reconciled = gateway.reconcile(requireNotNull(operation.calendarId), operation.ownershipToken, binding)) {
+                    val recoverySchedule = schedule?.takeIf { it.enabled }
+                    val reconciled = if (operation.kind == "UPSERT" && recoverySchedule != null) {
+                        val habit = habits.getHabit(operation.habitId)
+                            ?: throw IllegalStateException("Hábito ya no disponible")
+                        recoverPublication(gateway, requireNotNull(operation.calendarId), habit.name, recoverySchedule, operation.ownershipToken, binding)
+                    } else gateway.reconcile(requireNotNull(operation.calendarId), operation.ownershipToken, binding)
+                    when (reconciled) {
                         is GatewayResult.Published -> {
                             if (operation.kind == "DELETE") {
                                 when (gateway.delete(requireNotNull(operation.calendarId), reconciled.series.eventId, operation.ownershipToken, binding)) {
@@ -106,11 +121,13 @@ class CalendarExportCoordinator(
                             } else if (operation.kind == "DETACH") {
                                 calendar.finish(operation.operationId, binding?.copy(state = "DETACHED"), "DONE")
                             } else {
+                                val desired = recoverySchedule
+                                    ?: throw IllegalStateException("No hay una planificación activa que recuperar")
                                 calendar.finish(operation.operationId, binding?.copy(
                                     eventId = reconciled.series.eventId,
                                     publishedRevision = operation.revision,
                                     state = "PUBLISHED_LOCAL",
-                                    managedReminderMinutes = calendar.getSchedule(operation.habitId)?.reminderMinutes?.takeIf { it >= 0 },
+                                    managedReminderMinutes = desired.reminderMinutes.takeIf { it >= 0 },
                                 ), "DONE")
                             }
                         }

@@ -15,11 +15,13 @@ Antes de programar, leer estos documentos y el código afectado. Mantener cada r
 
 Vocabulario de estado: **implementado** = existe código; **verificado** = se ejecutó una comprobación concreta; **acordado pendiente** = pedido aceptado sin completar; **propuesta/decisión abierta** = no asumir una regla definitiva. Los criterios de aceptación no son evidencia de pruebas.
 
-Material complementario: [TASKS.md](TASKS.md), [AUDITORIA-PLAN-LUNA.md](AUDITORIA-PLAN-LUNA.md), [GOOGLE-CALENDAR-PLAN-LUNA.md](GOOGLE-CALENDAR-PLAN-LUNA.md), [PROMPT-IA.md](PROMPT-IA.md) y [FLUTTER.md](FLUTTER.md). Son planes/referencias de otras etapas y pueden contener alcance anterior; contrastarlos con estos seis documentos y las decisiones recientes antes de ejecutarlos. Flutter no forma parte del stack activo.
+Auditoría vigente: [AUDITORIA-Y-PLAN.md](AUDITORIA-Y-PLAN.md), revisión unificada de app, widgets y Calendar contra `16c5eef` y el trabajo local posterior. Sustituye los dos planes antiguos, conserva pendientes y distingue evidencia de código, pruebas históricas y validación aún ausente.
+
+Material complementario: [TASKS.md](TASKS.md), [PROMPT-IA.md](PROMPT-IA.md) y [FLUTTER.md](FLUTTER.md). Son planes/referencias de otras etapas y pueden contener alcance anterior; contrastarlos con estos seis documentos y la auditoría vigente antes de ejecutarlos. Flutter no forma parte del stack activo.
 
 ## Estado actual — revisión documental 2026-10-17
 ### Base implementada
-- Dominio diario de score/rachas/fecha local, Room y repositorio transaccional.
+- Dominio de score/rachas/fecha local, historial anterior a creación, tres frecuencias y períodos históricos en Room/repositorio transaccional.
 - Pantallas Hoy, editor, detalle/historial y ajustes de tema.
 - Widget individual con check grande y semana informativa; widget lista con selección por instancia y navegación al detalle.
 - Exportación opt-in de planes diarios mediante Android Calendar Provider. Su compilación no acredita integración con un proveedor/cuenta real.
@@ -28,11 +30,28 @@ Material complementario: [TASKS.md](TASKS.md), [AUDITORIA-PLAN-LUNA.md](AUDITORI
 - La semana del widget individual sustituye al check grande: tocar hoy completa/desmarca.
 - Mostrar racha 🔥 positiva; si es cero, porcentaje de constancia positivo; ocultar la métrica si ambos son cero.
 - Corregir destello blanco al abrir desde widget en oscuro y solapamiento de la barra de scroll con checks del widget lista.
-- Permitir historial anterior a creación, calculando desde la primera marca si es anterior.
-- Añadir días fijos, intervalos de N días y cuotas semanales. Decisiones de cálculo pendientes en `SCORE.md`.
+- Historial anterior a creación, score/rachas desde la primera marca y recálculo al quitarla: implementado localmente.
+- Días fijos, intervalos de N días y cuotas semanales con historia de reglas Room: implementado localmente; migración v2→v3 verificada en Samsung SM-A156M Android 16.
 - Indicar desbordamiento/scroll en Hoy, abrir teclado al crear y situar Calendar junto a Ajustes.
 
-Esta revisión modifica documentación; no implementa ni instala esa iteración.
+**Estado de la auditoría previa:** los resultados documentados abajo preceden a los cambios locales compartidos; el fallo anterior por `CalendarToday` ya no describe el árbol actual.
+
+### Verificación local de frecuencias — 2026-10-17
+- `./gradlew test lint assembleDebug --rerun-tasks`: **BUILD SUCCESSFUL**, 72 tests unitarios sin fallos; lint 0 errores, 10 advertencias y 1 hint; APK debug compilado.
+- `./gradlew :app:connectedDebugAndroidTest`: **BUILD SUCCESSFUL**, migración v2→v3 comprobada con `MigrationTestHelper` en Samsung SM-A156M Android 16. Se alineó Serialization 1.8.1 requerida por Room 2.8.5 frente al BOM transitivo 1.7.3 de DataStore.
+- APK debug instalado. El teléfono estaba bloqueado al abrirlo y capturar pantalla; la UI/widgets aún no tienen validación visual/interactiva. Calendar sigue sin soporte para frecuencias no diarias; ver [FREQUENCY-CALENDAR-FINDING.md](FREQUENCY-CALENDAR-FINDING.md).
+
+### Ajustes posteriores y nombres de frecuencia — 2026-10-17
+- Selector en una fila con scroll: **Diario**, **Días fijos**, **Cada X días**, **Días por semana**. La cuota se resume como «3 días por semana», no «Por intervalo». No cambian reglas, datos ni esquema.
+- `./gradlew test lint assembleDebug`: **BUILD SUCCESSFUL**, 83 tests sin fallos; lint 0 errores, 11 advertencias y 1 hint.
+- APK actualizado conservando datos con `adb -s R5CX3463Q6H install -r app/build/outputs/apk/debug/app-debug.apk`. Esta última modificación de nombres no tuvo una nueva comprobación visual en dispositivo; la instalación no la sustituye.
+
+### Cierre de UI/widgets y navegación — 2026-10-17
+- Hoy sin «Un día cada vez» y con nombre, constancia y racha en líneas separadas. Widget individual con cinco fechas centradas en hoy; lista sin texto de estado redundante y con 24dp de margen dentro de cada fila para la barra de scroll.
+- El fondo y los espacios vacíos del widget lista abren la app. Las listas cortas ajustan su altura para no interceptar taps debajo de la última fila. Información del hábito, checks y «Editar» mantienen acciones independientes.
+- `./gradlew test lint assembleDebug :app:assembleDebugAndroidTest`: **BUILD SUCCESSFUL**, 83 tests unitarios sin fallos; lint 0 errores, 11 advertencias y 1 hint.
+- Tras instalar ambos APK con `adb -s R5CX3463Q6H install -r`, se ejecutó `adb -s R5CX3463Q6H shell am instrument -w -e class com.laracha.app.widgets.HabitListRowLayoutTest,com.laracha.app.widgets.HabitListBackgroundTest com.laracha.app.test/androidx.test.runner.AndroidJUnitRunner`: **4 tests correctos** en Samsung SM-A156M Android 16. Comprueban RemoteViews, margen, altura y controles separados; no sustituyen interacción real en launcher. La comprobación manual del último cambio queda a cargo del usuario.
+- APK final instalado; no se modificaron hábitos ni marcas durante estas pruebas. La ejecución anterior de `connectedDebugAndroidTest` desinstaló la app al finalizar y se reinstaló después: no afirmar que esa ejecución conservó los datos. Para teléfonos personales, evitar esa tarea y su limpieza automática; usar un dispositivo desechable o instalación `-r` e instrumentación directa sin desinstalación. Se guardó un respaldo local fuera del repositorio antes de esta última actualización.
 
 ## Arquitectura
 ```text

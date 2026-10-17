@@ -54,13 +54,13 @@ fun LaRachaApp(
             themeMode = themeMode,
             onThemeModeChange = { mode -> scope.launch { preferences.setThemeMode(mode) } },
             onBack = { showSettings = false },
-            onOpenCalendar = { showCalendarSettings = true },
         )
     } else {
         TodayScreen(
             repository = repository,
             today = today,
             onOpenSettings = { showSettings = true },
+            onOpenCalendar = { showCalendarSettings = true },
             onDayChanged = onDayChanged,
             openedHabitId = openedHabitId,
             onOpenedHabitIdHandled = onOpenedHabitIdHandled,

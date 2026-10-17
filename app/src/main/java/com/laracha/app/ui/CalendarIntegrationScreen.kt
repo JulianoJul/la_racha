@@ -31,6 +31,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.laracha.app.calendar.AndroidCalendarGateway
 import com.laracha.app.calendar.CalendarExportCoordinator
+import com.laracha.app.calendar.PublicationOutcome
+import com.laracha.app.calendar.requireValidDuration
 import com.laracha.app.calendar.WritableCalendar
 import com.laracha.app.data.CalendarDao
 import com.laracha.app.data.CalendarPreferences
@@ -158,11 +162,12 @@ fun CalendarIntegrationScreen(
         if (enabled) {
             Text("Planificación por hábito", style = MaterialTheme.typography.titleLarge)
             if (habits.isEmpty()) Text("Crea un hábito antes de planificarlo.")
-            habits.forEach { habit ->
+            habits.forEach { habit -> key(habit.id) {
                 val existing = schedules.firstOrNull { it.habitId == habit.id }
                 val binding = bindings.firstOrNull { it.habitId == habit.id }
                 val blocked = blockedOperations.lastOrNull { it.habitId == habit.id }
                 CalendarScheduleCard(
+                    habitId = habit.id,
                     habitName = "${habit.emoji} ${habit.name}",
                     archived = habit.archivedOn != null,
                     initialDate = existing?.startDate ?: nextStartDate(existing?.localTime ?: "09:00", clock),
@@ -183,10 +188,13 @@ fun CalendarIntegrationScreen(
                         val target = binding?.calendarId ?: defaultCalendar
                         val targetCalendar = calendars.firstOrNull { it.id == target }
                         if (target == null || targetCalendar == null) feedback = "Elige un calendario Google disponible antes de publicar."
-                        else scope.launch {
-                            try {
-                                coordinator.requestPublication(habit.id, target, targetCalendar.accountName, LocalDate.parse(date), LocalTime.parse(time), duration.toInt(), ZoneId.of(zone), reminder)
-                                feedback = "La serie se publicó en el proveedor de calendario del dispositivo. La sincronización con Google no está confirmada."
+                        else {
+                             try {
+                                feedback = when (coordinator.requestPublication(habit.id, target, targetCalendar.accountName, LocalDate.parse(date), LocalTime.parse(time), duration, ZoneId.of(zone), reminder)) {
+                                    PublicationOutcome.PUBLISHED_LOCAL -> "La serie quedó publicada en el calendario del dispositivo. La sincronización con Google no está confirmada."
+                                    PublicationOutcome.PENDING -> "La publicación quedó pendiente; Calendar todavía no confirmó el resultado."
+                                    PublicationOutcome.BLOCKED -> "La publicación requiere atención; no se confirmó en Calendar."
+                                }
                             } catch (e: CancellationException) { throw e }
                             catch (e: Exception) { feedback = e.message ?: "No se pudo guardar la planificación." }
                         }
@@ -202,7 +210,7 @@ fun CalendarIntegrationScreen(
                         }
                     },
                 )
-            }
+            } }
             bindings.filter { binding -> habits.none { it.id == binding.habitId } && binding.state != "DELETED" && binding.state != "DETACHED" }.forEach { binding ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -263,6 +271,7 @@ fun CalendarIntegrationScreen(
 
 @Composable
 private fun CalendarScheduleCard(
+    habitId: String,
     habitName: String,
     archived: Boolean,
     initialDate: String,
@@ -272,15 +281,17 @@ private fun CalendarScheduleCard(
     initialZone: String,
     status: String,
     enabled: Boolean,
-    onPublish: (String, String, Int, Int, String) -> Unit,
+    onPublish: suspend (String, String, Int, Int, String) -> Unit,
     onDisable: (Boolean) -> Unit,
     onRecreate: (String, String, Int, Int, String) -> Unit,
 ) {
-    var date by remember(habitName, initialDate) { mutableStateOf(initialDate) }
-    var time by remember(habitName, initialTime) { mutableStateOf(initialTime) }
-    var duration by remember(habitName, initialDuration) { mutableStateOf(initialDuration) }
-    var reminder by remember(habitName, initialReminder) { mutableStateOf(initialReminder) }
-    var zone by remember(habitName, initialZone) { mutableStateOf(initialZone) }
+    var date by rememberSaveable(habitId) { mutableStateOf(initialDate) }
+    var time by rememberSaveable(habitId) { mutableStateOf(initialTime) }
+    var duration by rememberSaveable(habitId) { mutableStateOf(initialDuration) }
+    var reminder by rememberSaveable(habitId) { mutableStateOf(initialReminder) }
+    var zone by rememberSaveable(habitId) { mutableStateOf(initialZone) }
+    var saving by remember(habitId) { mutableStateOf(false) }
+    val cardScope = rememberCoroutineScope()
     var confirmRemoval by remember { mutableStateOf(false) }
     val editable = enabled && !archived
     Card(Modifier.fillMaxWidth()) {
@@ -292,13 +303,27 @@ private fun CalendarScheduleCard(
             OutlinedTextField(duration, { duration = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), enabled = editable, label = { Text("Duración en minutos") }, singleLine = true)
             OutlinedTextField(zone, { zone = it }, Modifier.fillMaxWidth(), enabled = editable, label = { Text("Zona horaria IANA") }, singleLine = true)
             Text("Recordatorio")
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf(-1 to "Ninguno", 0 to "A la hora", 10 to "10 min", 30 to "30 min").forEach { (value, label) ->
-                    OutlinedButton(enabled = editable, onClick = { reminder = value }) { Text(if (reminder == value) "✓ $label" else label) }
+            listOf(-1 to "Ninguno", 0 to "A la hora", 10 to "10 min antes", 30 to "30 min antes").chunked(2).forEach { options ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    options.forEach { (value, label) ->
+                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            enabled = editable,
+                            onClick = { reminder = value },
+                        ) { Text(if (reminder == value) "✓ $label" else label) }
+                    }
                 }
             }
             Text("Diario · se conserva la hora de pared en esta zona incluso al viajar. Los cambios externos no se importan; editar o borrar la serie completa puede afectar ocurrencias pasadas.", style = MaterialTheme.typography.bodySmall)
-            Button(enabled = enabled && !archived && runCatching { LocalDate.parse(date); LocalTime.parse(time); duration.toInt() in 1..1440; ZoneId.of(zone); true }.getOrDefault(false), onClick = { onPublish(date, time, duration.toInt(), reminder, zone) }) { Text("Publicar planificación") }
+            Button(enabled = enabled && !archived && !saving && runCatching { LocalDate.parse(date); LocalTime.parse(time); requireValidDuration(duration.toInt()); ZoneId.of(zone); true }.getOrDefault(false), onClick = {
+                duration.toIntOrNull()?.let { validDuration ->
+                    saving = true
+                    cardScope.launch {
+                        try { onPublish(date, time, validDuration, reminder, zone) }
+                        finally { saving = false }
+                    }
+                }
+            }) { Text(if (saving) "Guardando…" else "Publicar planificación") }
             if (status != "Desactivado") {
                 if (status.startsWith("Evento no encontrado") || status.startsWith("Evento no encontrado o resultado incierto")) {
                     Button(enabled = editable, onClick = { onRecreate(date, time, duration.toIntOrNull() ?: 30, reminder, zone) }) { Text("Confirmar y recrear serie") }

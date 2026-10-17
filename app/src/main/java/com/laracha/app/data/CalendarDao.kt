@@ -42,7 +42,7 @@ abstract class CalendarDao {
     @Query("DELETE FROM calendar_export_operations WHERE operationId = :id")
     abstract suspend fun deleteOperation(id: String)
 
-    @Query("DELETE FROM calendar_export_operations WHERE habitId = :habitId AND operationId != :currentId")
+    @Query("DELETE FROM calendar_export_operations WHERE habitId = :habitId AND operationId != :currentId AND state != 'IN_FLIGHT'")
     abstract suspend fun removeSupersededOperations(habitId: String, currentId: String)
 
     @Transaction

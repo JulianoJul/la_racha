@@ -5,7 +5,6 @@ import android.content.Intent
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.graphics.Color
 import androidx.glance.GlanceId
@@ -30,12 +29,15 @@ import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
+import androidx.glance.layout.Box
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
+import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
+import androidx.glance.layout.width
 import androidx.glance.color.ColorProvider
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
@@ -56,6 +58,33 @@ private val HabitIdKey = ActionParameters.Key<String>("habit_id")
 private val WidgetBlue = ColorProvider(day = Color(0xFF2563EB), night = Color(0xFF8AB4FF))
 private val WidgetGray = ColorProvider(day = Color(0xFF6B7280), night = Color(0xFF9CA3AF))
 private val WidgetDayFormat = DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", Locale.forLanguageTag("es-ES"))
+
+internal fun singleWidgetMetric(currentStreak: Int, scorePercent: Int): String? = when {
+    currentStreak > 0 -> "🔥 $currentStreak"
+    scorePercent > 0 -> "$scorePercent% constancia"
+    else -> null
+}
+
+internal data class SingleWidgetCarouselLayout(
+    val visibleDayCount: Int,
+    val todayCircleDp: Float,
+    val todayCellDp: Float,
+    val neighborCircleDp: Float,
+)
+
+internal fun singleWidgetCarouselLayout(contentWidthDp: Float, compact: Boolean): SingleWidgetCarouselLayout {
+    val todayCircle = if (compact) 44f else 56f
+    val todayCell = todayCircle + 8f
+    // Exactly two past dates and two future dates, with today's large control centered.
+    val visibleDays = 5
+    val neighborCell = (contentWidthDp - todayCell) / (visibleDays - 1)
+    return SingleWidgetCarouselLayout(
+        visibleDays,
+        todayCircle,
+        todayCell,
+        minOf(if (compact) 28f else 36f, (neighborCell - 4f).coerceAtLeast(1f)),
+    )
+}
 
 class SingleHabitWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(
@@ -96,8 +125,7 @@ private fun SingleHabitContent(context: Context, habit: HabitToday, size: DpSize
     val expanded = size.height >= 220.dp && size.width >= 220.dp
     val tall = size.height >= 200.dp
     val padding = if (size.height < 150.dp) 4.dp else if (expanded) 12.dp else 8.dp
-    val buttonSize = if (compact) 48.dp else if (expanded) 72.dp else if (tall) 64.dp else 56.dp
-    val daySize = ((size.width.value - 2 * padding.value) / 7 - 2).coerceIn(10f, 24f).dp
+    val carouselLayout = singleWidgetCarouselLayout(size.width.value - 2 * padding.value, compact)
     val openDetail = actionStartActivityWithIntent(
         Intent(context, MainActivity::class.java).putExtra("habit_id", habit.habit.id)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -106,23 +134,33 @@ private fun SingleHabitContent(context: Context, habit: HabitToday, size: DpSize
         modifier = GlanceModifier.fillMaxSize()
             .background(GlanceTheme.colors.widgetBackground)
             .cornerRadius(20.dp)
+            .clickable(openDetail)
             .padding(padding),
         verticalAlignment = Alignment.Vertical.CenterVertically,
         horizontalAlignment = Alignment.Horizontal.CenterHorizontally,
     ) {
-        if (compact) {
-            Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Vertical.CenterVertically) {
-                SingleHabitTitle(habit, openDetail, GlanceModifier.defaultWeight(), 16.sp, if (largeFont) 1 else 2)
-                Spacer(GlanceModifier.size(4.dp))
-                SingleHabitCompletionButton(context, habit, buttonSize)
-            }
-        } else {
-            SingleHabitTitle(habit, openDetail, GlanceModifier.fillMaxWidth(), if (expanded) 26.sp else 22.sp, if (tall && !largeFont) 2 else 1)
-            Spacer(GlanceModifier.size(8.dp))
-            SingleHabitCompletionButton(context, habit, buttonSize)
+        SingleHabitTitle(
+            habit,
+            openDetail,
+            GlanceModifier.fillMaxWidth(),
+            when {
+                compact -> 16.sp
+                expanded -> 24.sp
+                else -> 20.sp
+            },
+            if (tall && !largeFont) 2 else 1,
+        )
+        Spacer(GlanceModifier.size(if (compact) 2.dp else 6.dp))
+        SingleHabitDayCarousel(habit, carouselLayout)
+        val metric = singleWidgetMetric(habit.currentStreak, habit.scorePercent)
+        if (metric != null) {
+            Spacer(GlanceModifier.size(2.dp))
+            Text(
+                metric,
+                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = if (compact) 10.sp else 12.sp),
+                maxLines = 1,
+            )
         }
-        Spacer(GlanceModifier.size(if (compact) 4.dp else 8.dp))
-        SingleHabitWeek(habit.week, daySize)
     }
 }
 
@@ -137,43 +175,48 @@ private fun SingleHabitTitle(habit: HabitToday, openDetail: Action, modifier: Gl
 }
 
 @androidx.compose.runtime.Composable
-private fun SingleHabitCompletionButton(context: Context, habit: HabitToday, size: Dp) {
-    Image(
-        provider = ImageProvider(if (habit.completedToday) R.drawable.widget_check_done else R.drawable.widget_check_pending),
-        contentDescription = context.getString(
-            if (habit.completedToday) R.string.single_widget_uncheck else R.string.single_widget_check,
-            habit.habit.name,
-        ),
-        modifier = GlanceModifier.size(size).clickable(
-            actionRunCallback<SetHabitCompletionAction>(
-                actionParametersOf(HabitIdKey to habit.habit.id, CompletionValueKey to !habit.completedToday),
-            ),
-        ),
-        colorFilter = ColorFilter.tint(WidgetBlue),
-    )
-}
-
-@androidx.compose.runtime.Composable
-private fun SingleHabitWeek(days: List<HabitWeekDay>, daySize: Dp) {
+private fun SingleHabitDayCarousel(habit: HabitToday, layout: SingleWidgetCarouselLayout) {
+    val days = habit.daysAroundToday
+    val firstVisible = (days.size - layout.visibleDayCount).coerceAtLeast(0) / 2
     Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Vertical.CenterVertically) {
-        days.forEach { day ->
-            // Only today is blue, even when earlier days in this week were completed.
+        days.drop(firstVisible).take(layout.visibleDayCount).forEach { day ->
+            // Only today is blue; neighbors remain chronological across week boundaries.
             val color = if (day.isToday) WidgetBlue else WidgetGray
-            Column(GlanceModifier.defaultWeight(), horizontalAlignment = Alignment.Horizontal.CenterHorizontally) {
-                Text(day.initial, style = TextStyle(color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+            val todayAction = if (day.isToday) {
+                actionRunCallback<SetHabitCompletionAction>(
+                    actionParametersOf(
+                        HabitIdKey to habit.habit.id,
+                        CompletionValueKey to singleWidgetCompletionTarget(day.completed),
+                    ),
+                )
+            } else null
+            Column(
+                modifier = if (todayAction != null) {
+                    GlanceModifier.width(layout.todayCellDp.dp).clickable(todayAction)
+                } else GlanceModifier.defaultWeight(),
+                horizontalAlignment = Alignment.Horizontal.CenterHorizontally,
+            ) {
+                Text(day.initial, style = TextStyle(color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold), maxLines = 1)
                 Spacer(GlanceModifier.size(2.dp))
-                Image(
-                    provider = ImageProvider(if (day.completed) R.drawable.widget_check_done else R.drawable.widget_day_outline),
-                    contentDescription = day.date.format(WidgetDayFormat) +
-                        (if (day.isToday) ", hoy" else "") + ", " + when {
+                Box(
+                    modifier = GlanceModifier.fillMaxWidth().height(layout.todayCircleDp.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        provider = ImageProvider(if (day.completed) R.drawable.widget_check_done else R.drawable.widget_day_outline),
+                        contentDescription = (if (day.isToday) "${habit.habit.name}, " else "") + day.date.format(WidgetDayFormat) +
+                            (if (day.isToday) ", hoy" else "") + ", " + when {
                             day.completed -> "completado"
                             !day.available -> "no disponible"
                             day.isToday -> "pendiente"
                             else -> "sin completar"
-                        },
-                    modifier = GlanceModifier.size(daySize),
-                    colorFilter = ColorFilter.tint(color),
-                )
+                        } + (if (day.isToday) {
+                            if (day.completed) ". Desmarcar" else ". Completar"
+                        } else ""),
+                        modifier = GlanceModifier.size((if (day.isToday) layout.todayCircleDp else layout.neighborCircleDp).dp),
+                        colorFilter = ColorFilter.tint(color),
+                    )
+                }
             }
         }
     }

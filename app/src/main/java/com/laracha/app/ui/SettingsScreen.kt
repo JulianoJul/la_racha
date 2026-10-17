@@ -32,7 +32,6 @@ fun SettingsScreen(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     onBack: () -> Unit,
-    onOpenCalendar: () -> Unit = {},
 ) {
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         LazyColumn(
@@ -69,22 +68,6 @@ fun SettingsScreen(
                                 Text("Sigue el aspecto de Android", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                    }
-                }
-            }
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenCalendar),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        Text("Google Calendar", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Configura la exportación opcional de horarios de tus hábitos.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
                     }
                 }
             }

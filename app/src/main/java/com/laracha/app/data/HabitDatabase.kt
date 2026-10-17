@@ -8,11 +8,12 @@ import androidx.room.TypeConverters
     entities = [
         HabitEntity::class,
         CompletionEntity::class,
+        HabitFrequencyPeriodEntity::class,
         HabitCalendarScheduleEntity::class,
         CalendarEventBindingEntity::class,
         CalendarExportOperationEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(LocalDateConverters::class)

@@ -30,6 +30,27 @@ class SetHabitCompletionActionTest {
     }
 
     @Test
+    fun tappingTodayTargetsTheOppositeOfItsRenderedState() {
+        assertEquals(true, singleWidgetCompletionTarget(completedToday = false))
+        assertEquals(false, singleWidgetCompletionTarget(completedToday = true))
+    }
+
+    @Test
+    fun singleWidgetPrefersPositiveStreakToPositiveScore() {
+        assertEquals("🔥 4", singleWidgetMetric(currentStreak = 4, scorePercent = 82))
+    }
+
+    @Test
+    fun singleWidgetUsesPositiveScoreWhenStreakIsZero() {
+        assertEquals("82% constancia", singleWidgetMetric(currentStreak = 0, scorePercent = 82))
+    }
+
+    @Test
+    fun singleWidgetOmitsMetricWhenStreakAndScoreAreZero() {
+        assertNull(singleWidgetMetric(currentStreak = 0, scorePercent = 0))
+    }
+
+    @Test
     fun listCheckboxKeepsNativeToggleStateAsTheAuthority() {
         val parameters = actionParametersOf(ToggleableStateKey to false, CompletionValueKey to true)
 
