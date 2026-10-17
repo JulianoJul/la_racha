@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.LaRacha.WidgetConfiguration" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">#92D9A5</item>
+        <item name="android:windowBackground">#19241C</item>
+        <item name="android:statusBarColor">#19241C</item>
+        <item name="android:navigationBarColor">#19241C</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

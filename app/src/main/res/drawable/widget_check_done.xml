@@ -1,0 +1,11 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="64dp"
+    android:height="64dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <!-- Even-odd fill cuts a transparent check out of the solid circle. -->
+    <path
+        android:fillColor="#437A54"
+        android:fillType="evenOdd"
+        android:pathData="M32,4a28,28 0,1 0,0 56a28,28 0,1 0,0 -56M18,32L22,28L29,35L43,21L47,25L29,43Z" />
+</vector>

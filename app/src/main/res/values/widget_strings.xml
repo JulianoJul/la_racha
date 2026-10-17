@@ -1,0 +1,14 @@
+<resources>
+    <string name="single_widget_label">Hábito individual</string>
+    <string name="habit_list_widget_label">Lista de hábitos</string>
+    <string name="single_widget_description">Emoji, nombre, check y semana de lunes a domingo en un widget 2×2.</string>
+    <string name="habit_list_widget_description">Una lista configurable de hábitos con controles para completarlos.</string>
+    <string name="widget_loading">Cargando hábito…</string>
+    <string name="preview_single_name">🌱 Leer</string>
+    <string name="preview_weekdays">L   M   M   J   V   S   D</string>
+    <string name="single_widget_check">%1$s, pendiente hoy. Completar</string>
+    <string name="single_widget_uncheck">%1$s, completado hoy. Desmarcar</string>
+    <string name="preview_list_title">Mis hábitos</string>
+    <string name="preview_list_first">□ Leer  ·  82%%</string>
+    <string name="preview_list_second">☑ Caminar  ·  91%%</string>
+</resources>

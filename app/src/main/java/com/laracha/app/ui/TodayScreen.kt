@@ -1,0 +1,557 @@
+package com.laracha.app.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.laracha.app.data.HabitEntity
+import com.laracha.app.data.HabitRepository
+import com.laracha.app.data.HabitToday
+import com.laracha.app.HabitApplication
+import com.laracha.app.data.CalendarEventBindingEntity
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlinx.coroutines.launch
+
+private val HabitColors = listOf("#437A54", "#D17C45", "#567DA8", "#9A6AA6", "#C35C62")
+private val HabitEmojis = listOf("🌱", "📖", "💧", "🏃", "🧘", "✍️", "🎨", "🎸")
+private val SpanishLocale = Locale.forLanguageTag("es-ES")
+
+@Composable
+fun TodayScreen(
+    repository: HabitRepository,
+    today: LocalDate,
+    onOpenSettings: () -> Unit,
+    onDayChanged: () -> Unit,
+    openedHabitId: String? = null,
+    onOpenedHabitIdHandled: () -> Unit = {},
+) {
+    val todayFlow = remember(repository, today) { repository.observeToday(today) }
+    val habits by todayFlow.collectAsState(initial = emptyList())
+    val allHabits by repository.observeHabits().collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    val editing = allHabits.firstOrNull { it.id == editingId }
+    var detailHabitId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showEditor by rememberSaveable { mutableStateOf(false) }
+    var showingArchived by rememberSaveable { mutableStateOf(false) }
+    var deleteTarget by remember { mutableStateOf<HabitEntity?>(null) }
+    var calendarLifecycleTarget by remember { mutableStateOf<Pair<HabitEntity, Boolean>?>(null) }
+    val calendarBindings by (context.applicationContext as HabitApplication).database.calendarDao()
+        .observeBindings().collectAsState(initial = emptyList())
+
+    androidx.compose.runtime.LaunchedEffect(openedHabitId) {
+        if (openedHabitId != null) {
+            detailHabitId = openedHabitId
+            onOpenedHabitIdHandled()
+        }
+    }
+
+    BackHandler(enabled = showEditor || deleteTarget != null) {
+        if (deleteTarget != null) deleteTarget = null else showEditor = false
+    }
+
+    val active = habits
+    val archived = allHabits.filter { it.archivedOn != null }
+    val done = active.count(HabitToday::completedToday)
+
+    detailHabitId?.let { habitId ->
+        HabitDetailScreen(
+            repository = repository,
+            habitId = habitId,
+            today = today,
+            onBack = { detailHabitId = null },
+        )
+        return
+    }
+
+    val dateLabel = remember(today) {
+        today.format(DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM", SpanishLocale))
+            .replaceFirstChar { it.titlecase(SpanishLocale) }
+    }
+
+    Scaffold(
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = {
+                    editingId = null
+                    showEditor = true
+                },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Añadir hábito")
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { contentPadding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(contentPadding),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 20.dp,
+                top = 16.dp,
+                end = 20.dp,
+                bottom = 96.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(dateLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Ajustes")
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text("Mis hábitos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text("Pequeños pasos, a tu ritmo.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(18.dp))
+                TodayProgress(done, active.size)
+            }
+
+            if (active.isEmpty()) {
+                item {
+                    EmptyHabits(
+                        onCreate = {
+                            editingId = null
+                            showEditor = true
+                        },
+                    )
+                }
+            } else {
+                itemsIndexed(active, key = { _, item -> item.habit.id }) { index, item ->
+                    HabitRow(
+                        item = item,
+                        onToggle = { checked ->
+                            scope.launch {
+                                if (repository.today() != today) {
+                                    onDayChanged()
+                                    return@launch
+                                }
+                                repository.setCompleted(item.habit.id, today, checked)
+                            }
+                        },
+                        onEdit = {
+                            editingId = item.habit.id
+                            showEditor = true
+                        },
+                        onOpenDetail = { detailHabitId = item.habit.id },
+                        canMoveUp = index > 0,
+                        canMoveDown = index < active.lastIndex,
+                        onMove = { delta ->
+                            val orderedIds = active.map { it.habit.id }.toMutableList()
+                            val target = index + delta
+                            if (target in orderedIds.indices) {
+                                val movedId = orderedIds.removeAt(index)
+                                orderedIds.add(target, movedId)
+                                scope.launch {
+                                    repository.reorderHabits(orderedIds)
+                                }
+                            }
+                        },
+                        onArchive = {
+                            if (hasManagedCalendarBinding(calendarBindings, item.habit.id)) {
+                                calendarLifecycleTarget = item.habit to false
+                            } else scope.launch {
+                                repository.setArchived(item.habit.id, true)
+                            }
+                        },
+                            onDelete = {
+                                if (hasManagedCalendarBinding(calendarBindings, item.habit.id)) {
+                                    calendarLifecycleTarget = item.habit to true
+                                    deleteTarget = null
+                                } else deleteTarget = item.habit
+                            },
+                    )
+                }
+            }
+
+            if (archived.isNotEmpty()) {
+                item {
+                    TextButton(onClick = { showingArchived = !showingArchived }) {
+                        Text(if (showingArchived) "Ocultar archivados (${archived.size})" else "Ver archivados (${archived.size})")
+                    }
+                }
+                if (showingArchived) {
+                    items(archived, key = { "archived-${it.id}" }) { habit ->
+                        ArchivedHabitRow(
+                            habit = habit,
+                            onRestore = {
+                                scope.launch {
+                                    repository.setArchived(habit.id, false)
+                                }
+                            },
+                            onDelete = {
+                                if (hasManagedCalendarBinding(calendarBindings, habit.id)) {
+                                    calendarLifecycleTarget = habit to true
+                                } else deleteTarget = habit
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showEditor) {
+        HabitEditorDialog(
+            initial = editing,
+            onDismiss = { showEditor = false },
+            onSave = { name, emoji, color ->
+                scope.launch {
+                    val current = editing
+                    if (current == null) repository.createHabit(name, emoji, color)
+                    else {
+                        repository.renameHabit(current.id, name, emoji, color)
+                        val app = context.applicationContext as HabitApplication
+                        val schedule = app.database.calendarDao().getSchedule(current.id)
+                        val binding = app.database.calendarDao().getBinding(current.id)
+                        if (schedule?.enabled == true && binding != null && binding.state != "DETACHED") {
+                            app.calendarCoordinator.requestPublication(
+                                habitId = current.id,
+                                calendarId = binding.calendarId,
+                                accountName = binding.accountName,
+                                startDate = LocalDate.parse(schedule.startDate),
+                                time = java.time.LocalTime.parse(schedule.localTime),
+                                durationMinutes = schedule.durationMinutes,
+                                zoneId = java.time.ZoneId.of(schedule.zoneId),
+                                reminderMinutes = schedule.reminderMinutes,
+                            )
+                        }
+                    }
+                    showEditor = false
+                }
+            },
+        )
+    }
+
+    deleteTarget?.let { habit ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("¿Eliminar ${habit.name}?") },
+            text = { Text("También se borrará su historial. Esta acción no se puede deshacer.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (hasManagedCalendarBinding(calendarBindings, habit.id)) {
+                        calendarLifecycleTarget = habit to true
+                    } else {
+                        scope.launch {
+                            repository.deleteHabit(habit.id)
+                        }
+                    }
+                    deleteTarget = null
+                }) { Text("Eliminar", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancelar") } },
+        )
+    }
+
+    calendarLifecycleTarget?.let { (habit, deleting) ->
+        AlertDialog(
+            onDismissRequest = { calendarLifecycleTarget = null },
+            title = { Text(if (deleting) "Hábito vinculado a Calendar" else "Hábito planificado en Calendar") },
+            text = {
+                Text(
+                    "La serie de Calendar es independiente del historial de La Racha. Puedes conservarla sin que la app la gestione, eliminar la serie completa (incluidas apariciones pasadas) o cancelar.",
+                )
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        calendarLifecycleTarget = null
+                        scope.launch {
+                            val app = context.applicationContext as HabitApplication
+                            app.calendarCoordinator.requestDisable(habit.id, deleteSeries = false)
+                            if (deleting) repository.deleteHabit(habit.id) else repository.setArchived(habit.id, true)
+                        }
+                    }) { Text("Conservar") }
+                    TextButton(onClick = {
+                        calendarLifecycleTarget = null
+                        scope.launch {
+                            val app = context.applicationContext as HabitApplication
+                            app.calendarCoordinator.requestDisable(habit.id, deleteSeries = true)
+                            if (deleting) repository.deleteHabit(habit.id) else repository.setArchived(habit.id, true)
+                        }
+                    }) { Text("Eliminar serie", color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            dismissButton = { TextButton(onClick = { calendarLifecycleTarget = null }) { Text("Cancelar") } },
+        )
+    }
+}
+
+private fun hasManagedCalendarBinding(bindings: List<CalendarEventBindingEntity>, habitId: String): Boolean =
+    bindings.any { it.habitId == habitId && it.state !in setOf("DETACHED", "DELETED") }
+
+@Composable
+private fun TodayProgress(done: Int, total: Int) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column {
+                Text("Hoy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("Un día cada vez", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text("$done / $total", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun HabitRow(
+    item: HabitToday,
+    onToggle: (Boolean) -> Unit,
+    onEdit: () -> Unit,
+    onOpenDetail: () -> Unit,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onMove: (Int) -> Unit,
+    onArchive: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier.size(46.dp).background(parseHabitColor(item.habit.color).copy(alpha = 0.14f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Text(item.habit.emoji, fontSize = 23.sp) }
+            Spacer(Modifier.width(12.dp))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onOpenDetail)
+                    .semantics { contentDescription = "Ver detalle de ${item.habit.name}" },
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(item.habit.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "${item.scorePercent}% constancia  ·  ${item.currentStreak} días de racha",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Checkbox(
+                checked = item.completedToday,
+                onCheckedChange = onToggle,
+                modifier = Modifier.semantics {
+                    contentDescription = "${item.habit.name}, constancia ${item.scorePercent} por ciento, racha ${item.currentStreak} días, " +
+                        if (item.completedToday) "completado hoy" else "pendiente hoy; completar"
+                },
+            )
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Opciones de ${item.habit.name}")
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(text = { Text("Editar") }, onClick = { menuExpanded = false; onEdit() })
+                    DropdownMenuItem(
+                        text = { Text("Subir") },
+                        enabled = canMoveUp,
+                        onClick = { menuExpanded = false; onMove(-1) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Bajar") },
+                        enabled = canMoveDown,
+                        onClick = { menuExpanded = false; onMove(1) },
+                    )
+                    DropdownMenuItem(text = { Text("Archivar") }, onClick = { menuExpanded = false; onArchive() })
+                    DropdownMenuItem(text = { Text("Eliminar") }, onClick = { menuExpanded = false; onDelete() })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArchivedHabitRow(habit: HabitEntity, onRestore: () -> Unit, onDelete: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(habit.emoji, fontSize = 22.sp)
+            Spacer(Modifier.width(12.dp))
+            Text(habit.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            TextButton(onClick = onRestore) { Text("Restaurar") }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.MoreVert, contentDescription = "Eliminar ${habit.name}") }
+        }
+    }
+}
+
+@Composable
+private fun EmptyHabits(onCreate: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 30.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("🌿", fontSize = 38.sp)
+            Text("Empieza con un hábito", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("No hace falta hacerlo perfecto. Solo empezar.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(onClick = onCreate) { Text("Crear hábito") }
+        }
+    }
+}
+
+@Composable
+private fun HabitEditorDialog(
+    initial: HabitEntity?,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String) -> Unit,
+) {
+    var name by rememberSaveable(initial?.id) { mutableStateOf(initial?.name.orEmpty()) }
+    var emoji by rememberSaveable(initial?.id) { mutableStateOf(initial?.emoji ?: HabitEmojis.first()) }
+    var color by rememberSaveable(initial?.id) { mutableStateOf(initial?.color ?: HabitColors.first()) }
+    val valid = name.trim().isNotEmpty()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Nuevo hábito" else "Editar hábito") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nombre") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("Elige un icono", style = MaterialTheme.typography.labelLarge)
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    HabitEmojis.forEach { choice ->
+                        Text(
+                            choice,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(
+                                    if (emoji == choice) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                                    RoundedCornerShape(12.dp),
+                                )
+                                .clickable { emoji = choice }
+                                .semantics { contentDescription = "Icono $choice, ${if (emoji == choice) "seleccionado" else "no seleccionado"}" }
+                                .padding(8.dp),
+                            fontSize = 22.sp,
+                        )
+                    }
+                }
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HabitColors.forEachIndexed { index, choice ->
+                        val colorName = listOf("verde", "naranja", "azul", "violeta", "rojo")[index]
+                        Surface(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clickable { color = choice }
+                                .semantics { contentDescription = "Color $colorName${if (color == choice) ", seleccionado" else ""}" },
+                            shape = CircleShape,
+                            color = parseHabitColor(choice),
+                            border = if (color == choice) androidx.compose.foundation.BorderStroke(3.dp, MaterialTheme.colorScheme.onSurface) else null,
+                        ) {
+                            if (color == choice) Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = { onSave(name.trim(), emoji, color) }) { Text("Guardar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}
+
+internal fun parseHabitColor(value: String): Color =
+    runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(Color(0xFF437A54))

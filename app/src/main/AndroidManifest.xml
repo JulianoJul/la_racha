@@ -1,0 +1,52 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:name=".HabitApplication"
+        android:icon="@drawable/ic_app"
+        android:label="La Racha"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".widgets.SingleHabitWidgetConfigurationActivity"
+            android:exported="true"
+            android:label="Configurar widget"
+            android:theme="@style/Theme.LaRacha.WidgetConfiguration" />
+        <activity
+            android:name=".widgets.HabitListWidgetConfigurationActivity"
+            android:exported="true"
+            android:label="Configurar lista"
+            android:theme="@style/Theme.LaRacha.WidgetConfiguration" />
+        <receiver
+            android:name=".widgets.SingleHabitWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/single_habit_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".widgets.HabitListWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/habit_list_widget_info" />
+        </receiver>
+    </application>
+</manifest>
