@@ -34,6 +34,13 @@ internal fun requireValidDuration(minutes: Int) {
     require(minutes in 1..1440) { "La duración debe estar entre 1 y 1440 minutos" }
 }
 
+internal fun recurrenceChangeNeedsConfirmation(
+    previous: HabitCalendarScheduleEntity?,
+    binding: CalendarEventBindingEntity?,
+    plan: CalendarRecurrencePlan,
+): Boolean = previous != null && binding?.eventId != null &&
+    (previous.frequencyKey != plan.frequencyKey || previous.recurrenceRule != plan.rule)
+
 /** A found marker only proves identity; reapply every owned field before committing a revision. */
 internal suspend fun recoverPublication(
     gateway: CalendarGateway,

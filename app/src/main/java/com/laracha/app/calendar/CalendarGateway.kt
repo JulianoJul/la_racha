@@ -102,11 +102,11 @@ class AndroidCalendarGateway(private val context: Context) : CalendarGateway {
         val values = ContentValues().apply {
             put(CalendarContract.Events.CALENDAR_ID, calendarId)
             put(CalendarContract.Events.TITLE, habitName)
-            put(CalendarContract.Events.DESCRIPTION, "Planificación diaria de La Racha.\n$marker")
+            put(CalendarContract.Events.DESCRIPTION, "Planificación de La Racha.\n${schedule.recurrenceRule}\n$marker")
             put(CalendarContract.Events.DTSTART, start)
             put(CalendarContract.Events.EVENT_TIMEZONE, schedule.zoneId)
             put(CalendarContract.Events.DURATION, "PT${schedule.durationMinutes}M")
-            put(CalendarContract.Events.RRULE, "FREQ=DAILY")
+            put(CalendarContract.Events.RRULE, schedule.recurrenceRule)
             put(CalendarContract.Events.ALL_DAY, 0)
             when {
                 schedule.reminderMinutes >= 0 -> put(CalendarContract.Events.HAS_ALARM, 1)

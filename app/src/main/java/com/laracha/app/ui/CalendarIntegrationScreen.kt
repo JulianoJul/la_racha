@@ -43,12 +43,16 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.laracha.app.calendar.AndroidCalendarGateway
 import com.laracha.app.calendar.CalendarExportCoordinator
+import com.laracha.app.calendar.CalendarRecurrence
 import com.laracha.app.calendar.PublicationOutcome
 import com.laracha.app.calendar.requireValidDuration
 import com.laracha.app.calendar.WritableCalendar
 import com.laracha.app.data.CalendarDao
 import com.laracha.app.data.CalendarPreferences
 import com.laracha.app.data.HabitDao
+import com.laracha.app.data.frequency
+import com.laracha.app.domain.HabitFrequency
+import java.time.DayOfWeek
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import java.time.LocalDate
@@ -169,6 +173,11 @@ fun CalendarIntegrationScreen(
                 CalendarScheduleCard(
                     habitId = habit.id,
                     habitName = "${habit.emoji} ${habit.name}",
+                    frequency = habit.frequency(),
+                    initialQuotaDays = existing?.quotaDays.orEmpty(),
+                    publishedFrequencyKey = existing?.frequencyKey,
+                    publishedRule = existing?.recurrenceRule,
+                    hasExistingSeries = binding?.eventId != null,
                     archived = habit.archivedOn != null,
                     initialDate = existing?.startDate ?: nextStartDate(existing?.localTime ?: "09:00", clock),
                     initialTime = existing?.localTime ?: "09:00",
@@ -184,13 +193,13 @@ fun CalendarIntegrationScreen(
                         else -> "Desactivado"
                     },
                     enabled = enabled && (calendars.isNotEmpty() || binding != null),
-                    onPublish = { date, time, duration, reminder, zone ->
+                    onPublish = { date, time, duration, reminder, zone, quotaDays, confirmed ->
                         val target = binding?.calendarId ?: defaultCalendar
                         val targetCalendar = calendars.firstOrNull { it.id == target }
                         if (target == null || targetCalendar == null) feedback = "Elige un calendario Google disponible antes de publicar."
                         else {
                              try {
-                                feedback = when (coordinator.requestPublication(habit.id, target, targetCalendar.accountName, LocalDate.parse(date), LocalTime.parse(time), duration, ZoneId.of(zone), reminder)) {
+                                feedback = when (coordinator.requestPublication(habit.id, target, targetCalendar.accountName, LocalDate.parse(date), LocalTime.parse(time), duration, ZoneId.of(zone), reminder, quotaDays, confirmed)) {
                                     PublicationOutcome.PUBLISHED_LOCAL -> "La serie quedó publicada en el calendario del dispositivo. La sincronización con Google no está confirmada."
                                     PublicationOutcome.PENDING -> "La publicación quedó pendiente; Calendar todavía no confirmó el resultado."
                                     PublicationOutcome.BLOCKED -> "La publicación requiere atención; no se confirmó en Calendar."
@@ -200,10 +209,10 @@ fun CalendarIntegrationScreen(
                         }
                     },
                     onDisable = { delete -> scope.launch { coordinator.requestDisable(habit.id, delete); feedback = if (delete) "Se solicitó eliminar la serie gestionada." else "La serie se conservó y quedó desvinculada." } },
-                    onRecreate = { date, time, duration, reminder, zone ->
+                    onRecreate = { date, time, duration, reminder, zone, quotaDays ->
                         scope.launch {
                             try {
-                                coordinator.requestRecreate(habit.id, LocalDate.parse(date), LocalTime.parse(time), duration.toInt(), ZoneId.of(zone), reminder)
+                                coordinator.requestRecreate(habit.id, LocalDate.parse(date), LocalTime.parse(time), duration, ZoneId.of(zone), reminder, quotaDays)
                                 feedback = "Se solicitó recrear una serie nueva con identidad propia. La sincronización remota no está verificada."
                             } catch (e: CancellationException) { throw e }
                             catch (e: Exception) { feedback = e.message ?: "No se pudo recrear la serie." }
@@ -273,6 +282,11 @@ fun CalendarIntegrationScreen(
 private fun CalendarScheduleCard(
     habitId: String,
     habitName: String,
+    frequency: HabitFrequency,
+    initialQuotaDays: String,
+    publishedFrequencyKey: String?,
+    publishedRule: String?,
+    hasExistingSeries: Boolean,
     archived: Boolean,
     initialDate: String,
     initialTime: String,
@@ -281,23 +295,45 @@ private fun CalendarScheduleCard(
     initialZone: String,
     status: String,
     enabled: Boolean,
-    onPublish: suspend (String, String, Int, Int, String) -> Unit,
+    onPublish: suspend (String, String, Int, Int, String, Set<DayOfWeek>, Boolean) -> Unit,
     onDisable: (Boolean) -> Unit,
-    onRecreate: (String, String, Int, Int, String) -> Unit,
+    onRecreate: (String, String, Int, Int, String, Set<DayOfWeek>) -> Unit,
 ) {
-    var date by rememberSaveable(habitId) { mutableStateOf(initialDate) }
-    var time by rememberSaveable(habitId) { mutableStateOf(initialTime) }
-    var duration by rememberSaveable(habitId) { mutableStateOf(initialDuration) }
-    var reminder by rememberSaveable(habitId) { mutableStateOf(initialReminder) }
-    var zone by rememberSaveable(habitId) { mutableStateOf(initialZone) }
+    // Load asynchronously arriving snapshots without replacing the card's coroutine scope on every revision.
+    var date by rememberSaveable(habitId, initialDate) { mutableStateOf(initialDate) }
+    var time by rememberSaveable(habitId, initialTime) { mutableStateOf(initialTime) }
+    var duration by rememberSaveable(habitId, initialDuration) { mutableStateOf(initialDuration) }
+    var reminder by rememberSaveable(habitId, initialReminder) { mutableStateOf(initialReminder) }
+    var zone by rememberSaveable(habitId, initialZone) { mutableStateOf(initialZone) }
+    var quotaDayCode by rememberSaveable(habitId, initialQuotaDays) { mutableStateOf(initialQuotaDays) }
     var saving by remember(habitId) { mutableStateOf(false) }
+    var confirmFrequencyChange by remember(habitId) { mutableStateOf(false) }
     val cardScope = rememberCoroutineScope()
     var confirmRemoval by remember { mutableStateOf(false) }
-    val editable = enabled && !archived
+    val editable = enabled && !archived && !saving
+    val quotaDays = if (frequency is HabitFrequency.WeeklyQuota) CalendarRecurrence.decodeDays(quotaDayCode) else emptySet()
+    val recurrence = runCatching { CalendarRecurrence.plan(frequency, LocalDate.parse(date), quotaDays) }.getOrNull()
+    val valid = recurrence != null && runCatching {
+        LocalTime.parse(time); requireValidDuration(duration.toInt()); ZoneId.of(zone); true
+    }.getOrDefault(false)
+    val changed = hasExistingSeries && recurrence != null &&
+        (publishedFrequencyKey != recurrence.frequencyKey || publishedRule != recurrence.rule)
+    suspend fun publish(days: Set<DayOfWeek>, confirmed: Boolean) {
+        saving = true
+        try { onPublish(date, time, duration.toInt(), reminder, zone, days, confirmed) }
+        finally { saving = false }
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(habitName + if (archived) " · Archivado" else "", style = MaterialTheme.typography.titleMedium)
             Text(status, style = MaterialTheme.typography.bodySmall)
+            Text("Frecuencia del hábito: ${frequency.label()}")
+            if (publishedFrequencyKey != null && publishedFrequencyKey != CalendarRecurrence.frequencyKey(frequency)) {
+                Text("La frecuencia cambió. Calendar conserva la planificación anterior hasta que confirmes actualizar la serie.", color = MaterialTheme.colorScheme.secondary)
+            }
+            if (frequency is HabitFrequency.WeeklyQuota) {
+                CalendarQuotaDaysPicker(frequency.timesPerWeek, quotaDays, editable && !saving) { quotaDayCode = CalendarRecurrence.encodeDays(it) }
+            }
             OutlinedTextField(date, { date = it }, Modifier.fillMaxWidth(), enabled = editable, label = { Text("Fecha inicial (AAAA-MM-DD)") }, singleLine = true)
             OutlinedTextField(time, { time = it }, Modifier.fillMaxWidth(), enabled = editable, label = { Text("Hora local (HH:MM)") }, singleLine = true)
             OutlinedTextField(duration, { duration = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), enabled = editable, label = { Text("Duración en minutos") }, singleLine = true)
@@ -314,29 +350,32 @@ private fun CalendarScheduleCard(
                     }
                 }
             }
-            Text("Diario · se conserva la hora de pared en esta zona incluso al viajar. Los cambios externos no se importan; editar o borrar la serie completa puede afectar ocurrencias pasadas.", style = MaterialTheme.typography.bodySmall)
-            Button(enabled = enabled && !archived && !saving && runCatching { LocalDate.parse(date); LocalTime.parse(time); requireValidDuration(duration.toInt()); ZoneId.of(zone); true }.getOrDefault(false), onClick = {
-                duration.toIntOrNull()?.let { validDuration ->
-                    saving = true
-                    cardScope.launch {
-                        try { onPublish(date, time, validDuration, reminder, zone) }
-                        finally { saving = false }
-                    }
-                }
-            }) { Text(if (saving) "Guardando…" else "Publicar planificación") }
+            recurrence?.let { Text("Primera aparición: ${it.firstDate}", style = MaterialTheme.typography.bodySmall) }
+            Text("La primera aparición se ajusta a la frecuencia; los intervalos mantienen su fecha de referencia. Se conserva la hora de pared en esta zona incluso al viajar. Editar la serie completa puede afectar apariciones pasadas; los cambios externos no se importan.", style = MaterialTheme.typography.bodySmall)
+            Button(enabled = editable && !saving && valid, onClick = {
+                if (changed) confirmFrequencyChange = true
+                else cardScope.launch { publish(quotaDays, false) }
+            }) { Text(if (saving) "Guardando…" else if (hasExistingSeries) "Actualizar planificación" else "Publicar planificación") }
             if (status != "Desactivado") {
                 if (status.startsWith("Evento no encontrado") || status.startsWith("Evento no encontrado o resultado incierto")) {
-                    Button(enabled = editable, onClick = { onRecreate(date, time, duration.toIntOrNull() ?: 30, reminder, zone) }) { Text("Confirmar y recrear serie") }
+                    Button(enabled = editable && valid && !saving, onClick = { onRecreate(date, time, duration.toInt(), reminder, zone, quotaDays) }) { Text("Confirmar y recrear serie") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(enabled = enabled, onClick = { onDisable(false) }) { Text("Conservar y desvincular") }
-                    OutlinedButton(enabled = enabled, onClick = { confirmRemoval = !confirmRemoval }) { Text("Eliminar serie…") }
+                    OutlinedButton(enabled = enabled && !saving, onClick = { onDisable(false) }) { Text("Conservar y desvincular") }
+                    OutlinedButton(enabled = enabled && !saving, onClick = { confirmRemoval = !confirmRemoval }) { Text("Eliminar serie…") }
                 }
                 if (confirmRemoval) {
                     Text("Esto elimina la serie completa y sus apariciones del calendario. El historial de La Racha no cambia.")
-                    Button(enabled = enabled, onClick = { confirmRemoval = false; onDisable(true) }) { Text("Confirmar eliminación") }
+                    Button(enabled = enabled && !saving, onClick = { confirmRemoval = false; onDisable(true) }) { Text("Confirmar eliminación") }
                 }
             }
+        }
+    }
+    if (confirmFrequencyChange) {
+        CalendarSeriesUpdateDialog(habitName, frequency, quotaDays, onDismiss = { confirmFrequencyChange = false }) { days ->
+            quotaDayCode = CalendarRecurrence.encodeDays(days)
+            publish(days, true)
+            confirmFrequencyChange = false
         }
     }
 }

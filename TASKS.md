@@ -38,15 +38,17 @@
 
 ## Ampliación — Google Calendar opt-in (código implementado, validación pendiente)
 - [x] Android Calendar Provider con selector de calendario Google existente, permiso runtime al activar y destino predeterminado para nuevas publicaciones.
-- [x] Opt-in por hábito; series `FREQ=DAILY`, duración RFC 5545, zona horaria y recordatorio opcional.
+- [x] Opt-in por hábito; recurrencia diaria, días fijos, intervalo anclado y cuota con N días elegidos para Calendar; duración RFC 5545, zona horaria y recordatorio opcional. Nuevas recurrencias compiladas, sin QA de provider.
 - [x] Room v1→v2 no destructiva y operaciones durables con vínculo/propiedad, reconciliación por marcador y WorkManager best-effort para reanudar pendientes.
-- [x] Snapshots Room v1, v2 y v3 exportados mediante KSP.
+- [x] Snapshots Room v1, v2, v3 y v4 exportados mediante KSP.
 - [x] Pantalla `CalendarIntegrationScreen` conectada a Hoy/Ajustes; cambios de nombre/frecuencia enlazados al editor.
 - [x] Migración Room v1→v2 y v2→v3 ejecutada en SQL aislado y migración v2→v3 validada con `MigrationTestHelper` en SM-A156M Android 16.
 - [ ] Probar permisos, proveedor, duplicados, caídas entre provider y Room y revocación; la prueba instrumentada no cubre Calendar.
 - [ ] Validar recurrencia, marcadores y recordatorios en provider de dispositivo; comprobar sincronización efectiva en Google Calendar web/u otro dispositivo (no afirmar éxito antes de esta comprobación).
 - [x] Integrar pantalla en navegación y conectar conservación/eliminación de series con archive/delete.
-- [ ] Probar flujo visual/launcher, Calendar real y cuenta de QA. Frecuencias no diarias aún no se traducen a Calendar; ver `FREQUENCY-CALENDAR-FINDING.md`.
+- [x] Snapshot durable de recurrencia autorizada y confirmación al modificar una frecuencia exportada. Renombrar/reintentar no aplica reglas nuevas sin consentimiento.
+- [x] Migración v3→v4 comprobada en SQLite aislado; pruebas de migración/reapertura Room y cadena v2→v4 añadidas y compiladas.
+- [ ] Ejecutar esas nuevas pruebas instrumentadas y probar flujo visual/launcher, Calendar real y cuenta de QA; ver `FREQUENCY-CALENDAR-FINDING.md`.
 - [x] `./gradlew test lint assembleDebug --rerun-tasks` pasó el 2026-10-17: 72 unit tests; lint sin errores.
 
 La exportación publica solo horario/nombre de hábitos opt-in; completados e historial permanecen en Room. El estado «publicado en calendario del dispositivo» no equivale a «sincronizado con Google».

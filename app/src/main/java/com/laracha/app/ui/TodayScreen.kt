@@ -78,6 +78,9 @@ import com.laracha.app.data.HabitRepository
 import com.laracha.app.data.HabitToday
 import com.laracha.app.HabitApplication
 import com.laracha.app.data.CalendarEventBindingEntity
+import com.laracha.app.data.HabitCalendarScheduleEntity
+import com.laracha.app.calendar.CalendarRecurrence
+import com.laracha.app.calendar.PublicationOutcome
 import com.laracha.app.data.frequency
 import com.laracha.app.domain.HabitFrequency
 import java.time.DayOfWeek
@@ -86,10 +89,19 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 private val HabitColors = listOf("#437A54", "#D17C45", "#567DA8", "#9A6AA6", "#C35C62")
 private val HabitEmojis = listOf("🌱", "📖", "💧", "🏃", "🧘", "✍️", "🎨", "🎸")
 private val SpanishLocale = Locale.forLanguageTag("es-ES")
+
+private data class CalendarFrequencyUpdateTarget(
+    val habitId: String,
+    val habitName: String,
+    val frequency: HabitFrequency,
+    val schedule: HabitCalendarScheduleEntity,
+    val binding: CalendarEventBindingEntity,
+)
 
 @Composable
 fun TodayScreen(
@@ -113,6 +125,7 @@ fun TodayScreen(
     var showingArchived by rememberSaveable { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<HabitEntity?>(null) }
     var calendarLifecycleTarget by remember { mutableStateOf<Pair<HabitEntity, Boolean>?>(null) }
+    var calendarFrequencyTarget by remember { mutableStateOf<CalendarFrequencyUpdateTarget?>(null) }
     val calendarBindings by (context.applicationContext as HabitApplication).database.calendarDao()
         .observeBindings().collectAsState(initial = emptyList())
 
@@ -301,21 +314,17 @@ fun TodayScreen(
                     if (current == null) repository.createHabit(name, emoji, color, frequency)
                     else {
                         repository.renameHabit(current.id, name, emoji, color)
-                        repository.updateFrequency(current.id, frequency)
+                        val frequencyChanged = repository.updateFrequency(current.id, frequency)
                         val app = context.applicationContext as HabitApplication
                         val schedule = app.database.calendarDao().getSchedule(current.id)
                         val binding = app.database.calendarDao().getBinding(current.id)
-                        if (schedule?.enabled == true && binding != null && binding.state != "DETACHED") {
-                            app.calendarCoordinator.requestPublication(
-                                habitId = current.id,
-                                calendarId = binding.calendarId,
-                                accountName = binding.accountName,
-                                startDate = LocalDate.parse(schedule.startDate),
-                                time = java.time.LocalTime.parse(schedule.localTime),
-                                durationMinutes = schedule.durationMinutes,
-                                zoneId = java.time.ZoneId.of(schedule.zoneId),
-                                reminderMinutes = schedule.reminderMinutes,
-                            )
+                        if (schedule?.enabled == true && binding != null && binding.state !in setOf("DETACHED", "DELETED") &&
+                            app.calendarPreferences.integrationEnabled.first()) {
+                            if (frequencyChanged) {
+                                calendarFrequencyTarget = CalendarFrequencyUpdateTarget(current.id, "$emoji $name", frequency, schedule, binding)
+                            } else {
+                                app.calendarCoordinator.refreshPublishedName(current.id)
+                            }
                         }
                     }
                     showEditor = false
@@ -343,6 +352,35 @@ fun TodayScreen(
             },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancelar") } },
         )
+    }
+
+    calendarFrequencyTarget?.let { target ->
+        CalendarSeriesUpdateDialog(
+            habitName = target.habitName,
+            frequency = target.frequency,
+            initialQuotaDays = CalendarRecurrence.decodeDays(target.schedule.quotaDays),
+            onDismiss = { calendarFrequencyTarget = null },
+        ) { quotaDays ->
+            val app = context.applicationContext as HabitApplication
+            val schedule = target.schedule
+            val result = app.calendarCoordinator.requestPublication(
+                habitId = target.habitId,
+                calendarId = target.binding.calendarId,
+                accountName = target.binding.accountName,
+                startDate = LocalDate.parse(schedule.startDate),
+                time = java.time.LocalTime.parse(schedule.localTime),
+                durationMinutes = schedule.durationMinutes,
+                zoneId = java.time.ZoneId.of(schedule.zoneId),
+                reminderMinutes = schedule.reminderMinutes,
+                quotaDays = quotaDays,
+                confirmedRecurrenceChange = true,
+            )
+            when (result) {
+                PublicationOutcome.PUBLISHED_LOCAL -> calendarFrequencyTarget = null
+                PublicationOutcome.PENDING -> error("La actualización quedó pendiente. Puedes revisar su estado en Calendar.")
+                PublicationOutcome.BLOCKED -> error("No se confirmó la actualización. Revisa los permisos y el estado en Calendar.")
+            }
+        }
     }
 
     calendarLifecycleTarget?.let { (habit, deleting) ->

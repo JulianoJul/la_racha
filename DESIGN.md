@@ -63,6 +63,11 @@ Indicadores semanales del widget: azul `#2563EB` / `#8AB4FF` para hoy; gris `#6B
 - Fechas pasadas editables, incluidas las anteriores a creación al implementar la ampliación. Futuras sin acción de completar.
 - Dar feedback al guardar o ante error, sin saltar de mes o perder posición innecesariamente.
 
+### Calendar
+- Mostrar la frecuencia que se va a exportar y la primera aparición ajustada. En cuotas, seleccionar exactamente N días en controles que se distribuyen según el ancho; explicar que son solo planificación, no días obligatorios para el hábito.
+- Al editar una frecuencia exportada, preguntar «¿Actualizar también Calendar?» y advertir que se cambia la serie completa, incluidas apariciones pasadas. Ofrecer «Mantener Calendar» sin modificar los eventos.
+- Si la frecuencia del hábito y la planificación guardada difieren, mostrar el aviso y permitir actualizar desde Calendar con confirmación. Los campos cargan los valores del snapshot guardado; una recomposición ordinaria no debe sobrescribir la edición ni cancelar una publicación en curso.
+
 ### Widgets
 - Individual 2×2: emoji/nombre, carrusel de fechas con hoy grande en el centro, vecinos a ambos lados y una métrica positiva opcional. Priorizar círculos legibles sobre ver los siete días. No añadir otro check separado.
 - Individual con solo dos acciones: fondo general para detalle y hoy para completar; el nombre no es otro enlace independiente.

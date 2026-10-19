@@ -78,7 +78,10 @@ Toda escritura usa una operación idempotente y transaccional. Tras el commit se
 - Apagado inicialmente; solicita `READ_CALENDAR`/`WRITE_CALENDAR` al activar la función.
 - Destinos: calendarios existentes de cuenta Google visibles, escribibles y con sincronización habilitada. No crear calendarios ni cuentas.
 - Exportar nombre/horario solo de hábitos configurados explícitamente. No exportar completados, score ni rachas; no importar cambios externos.
-- Actualmente la planificación exportada es diaria. La ampliación de recurrencias debe definir su traducción antes de publicar series no diarias.
+- Traducción acordada: Diario → diaria; Días fijos → los días elegidos; Cada X días → intervalo anclado en su referencia original. La fecha inicial de Calendar es un límite inferior: la primera aparición se ajusta a una fecha que cumpla la regla.
+- En Días por semana, el usuario elige exactamente N días concretos al exportar. Esta selección pertenece solo a la planificación de Calendar y no cambia la cuota ni el score del hábito.
+- Cada planificación guarda la recurrencia autorizada. Reintentos y cambios de nombre conservan esa regla; no deducen una frecuencia nueva en segundo plano.
+- Al editar una frecuencia ya exportada, preguntar si también se actualiza Calendar. Rechazar conserva los eventos y deja un aviso de frecuencia desactualizada. Aceptar actualiza la serie completa, incluidas sus apariciones pasadas, con advertencia explícita; no equivale a editar «solo desde ahora». Calendar usa la última frecuencia elegida para la planificación, no reconstruye el historial de reglas del score.
 - Insertar un evento en el proveedor local no acredita su llegada a Google Calendar web. La sincronización remota depende de Android.
 - Sin backend, OAuth propio ni permiso `INTERNET`. Los permisos de infraestructura aportados por bibliotecas se documentan y revisan en el manifiesto fusionado.
 - Base, preferencias e IDs locales excluidos de backup/transferencia. Los eventos ya exportados pueden permanecer tras desinstalar.
@@ -101,6 +104,5 @@ Los criterios describen aceptación futura, no resultados de pruebas ya realizad
 ## Decisiones abiertas antes del código afectado
 - Presentación y resumen de Hoy para cuotas y días no programados; evitar denominadores que cambien al marcar.
 - Política temporal al archivar/restaurar: decidir cómo tratar ese intervalo al recalcular, sin introducir skips implícitos.
-- Traducción a Calendar de nuevas frecuencias; bloqueada hasta coordinación específica, especialmente para cuotas sin días fijados.
 
 Fuera del alcance actual: valores numéricos por día, reportes avanzados, recordatorios propios, invitados/ubicaciones Calendar, IA dentro de la app y sincronización bidireccional.

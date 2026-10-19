@@ -1,6 +1,7 @@
 package com.laracha.app.data
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.PrimaryKey
 
 /** Desired agenda data. A row is created only after the user opts a habit in. */
@@ -15,6 +16,10 @@ data class HabitCalendarScheduleEntity(
     /** -1 means no reminder; otherwise provider alert minutes. */
     val reminderMinutes: Int,
     val revision: Long,
+    /** Frozen, explicitly authorized planning rule; retries must not recalculate it from the habit. */
+    @ColumnInfo(defaultValue = "'FREQ=DAILY'") val recurrenceRule: String = "FREQ=DAILY",
+    @ColumnInfo(defaultValue = "'DAILY'") val frequencyKey: String = "DAILY",
+    @ColumnInfo(defaultValue = "''") val quotaDays: String = "",
 )
 
 /** Provider ids are device-local. Ownership token is also embedded in event description. */

@@ -5,6 +5,8 @@ import com.laracha.app.data.CalendarEventBindingEntity
 import com.laracha.app.data.CalendarExportOperationEntity
 import com.laracha.app.data.HabitCalendarScheduleEntity
 import com.laracha.app.data.HabitDao
+import com.laracha.app.data.frequency
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -36,6 +38,8 @@ class CalendarExportCoordinator(
         durationMinutes: Int,
         zoneId: ZoneId,
         reminderMinutes: Int = -1,
+        quotaDays: Set<DayOfWeek> = emptySet(),
+        confirmedRecurrenceChange: Boolean = false,
     ): PublicationOutcome = intentMutex.withLock {
         requireValidDuration(durationMinutes)
         require(reminderMinutes in setOf(-1, 0, 10, 30)) { "Recordatorio no permitido" }
@@ -44,16 +48,39 @@ class CalendarExportCoordinator(
         require(startDate >= LocalDate.parse(habit.createdOn)) { "La fecha inicial no puede preceder a la creación del hábito" }
         val previous = calendar.getSchedule(habitId)
         val binding = calendar.getBinding(habitId)
+        val recurrence = CalendarRecurrence.plan(habit.frequency(), startDate, quotaDays)
+        require(confirmedRecurrenceChange || !recurrenceChangeNeedsConfirmation(previous, binding, recurrence)) {
+            "Confirma la actualización de la serie completa de Calendar, incluidas sus apariciones pasadas"
+        }
         val revision = (previous?.revision ?: 0L) + 1
         val token = binding?.ownershipToken ?: UUID.randomUUID().toString()
-        val schedule = HabitCalendarScheduleEntity(habitId, true, startDate.toString(), time.toString(), durationMinutes, zoneId.id, reminderMinutes, revision)
-        val operation = CalendarExportOperationEntity(UUID.randomUUID().toString(), habitId, revision, "UPSERT", binding?.calendarId ?: calendarId, binding?.eventId, token, "PENDING", null, 0)
+        val schedule = HabitCalendarScheduleEntity(
+            habitId, true, recurrence.firstDate.toString(), time.toString(), durationMinutes, zoneId.id, reminderMinutes, revision,
+            recurrence.rule, recurrence.frequencyKey, recurrence.quotaDaysCode,
+        )
         val destinationBinding = binding ?: CalendarEventBindingEntity(habitId, calendarId, accountName, "com.google", null, token, 0, "PENDING", null)
-        calendar.saveDesired(schedule, operation, destinationBinding)
+        publishDesired(schedule, destinationBinding)
+    }
+
+    /** Renaming is not consent to replace a previously authorized recurrence. */
+    suspend fun refreshPublishedName(habitId: String): PublicationOutcome? = intentMutex.withLock {
+        val habit = habits.getHabit(habitId) ?: return@withLock null
+        if (habit.archivedOn != null) return@withLock null
+        val previous = calendar.getSchedule(habitId)?.takeIf { it.enabled } ?: return@withLock null
+        val binding = calendar.getBinding(habitId)?.takeIf { it.state !in setOf("DETACHED", "DELETED") } ?: return@withLock null
+        publishDesired(previous.copy(revision = previous.revision + 1), binding)
+    }
+
+    private suspend fun publishDesired(schedule: HabitCalendarScheduleEntity, binding: CalendarEventBindingEntity): PublicationOutcome {
+        val operation = CalendarExportOperationEntity(
+            UUID.randomUUID().toString(), schedule.habitId, schedule.revision, "UPSERT",
+            binding.calendarId, binding.eventId, binding.ownershipToken, "PENDING", null, 0,
+        )
+        calendar.saveDesired(schedule, operation, binding)
         enqueueRetry()
         drain()
-        when {
-            calendar.getBinding(habitId)?.let { it.publishedRevision == revision && it.state == "PUBLISHED_LOCAL" } == true -> PublicationOutcome.PUBLISHED_LOCAL
+        return when {
+            calendar.getBinding(schedule.habitId)?.let { it.publishedRevision == schedule.revision && it.state == "PUBLISHED_LOCAL" } == true -> PublicationOutcome.PUBLISHED_LOCAL
             calendar.getOperation(operation.operationId)?.state == "BLOCKED" -> PublicationOutcome.BLOCKED
             else -> PublicationOutcome.PENDING
         }
@@ -75,14 +102,21 @@ class CalendarExportCoordinator(
     }
 
     /** Called only after an explicit user confirmation when the linked series was removed externally. */
-    suspend fun requestRecreate(habitId: String, startDate: LocalDate, time: LocalTime, durationMinutes: Int, zoneId: ZoneId, reminderMinutes: Int = -1) {
+    suspend fun requestRecreate(habitId: String, startDate: LocalDate, time: LocalTime, durationMinutes: Int, zoneId: ZoneId, reminderMinutes: Int = -1, quotaDays: Set<DayOfWeek> = emptySet()) {
+        // Validate before changing an existing binding or consulting the provider.
+        requireValidDuration(durationMinutes)
+        require(reminderMinutes in setOf(-1, 0, 10, 30)) { "Recordatorio no permitido" }
+        val habit = requireNotNull(habits.getHabit(habitId)) { "Hábito no encontrado" }
+        require(habit.archivedOn == null) { "No se puede exportar un hábito archivado" }
+        require(startDate >= LocalDate.parse(habit.createdOn)) { "La fecha inicial no puede preceder a la creación del hábito" }
+        CalendarRecurrence.plan(habit.frequency(), startDate, quotaDays)
         val binding = requireNotNull(calendar.getBinding(habitId)) { "No existe un vínculo que recrear" }
         when (gateway.reconcile(binding.calendarId, binding.ownershipToken, binding)) {
             is GatewayResult.Published -> Unit // Existing managed series is found; update it, do not duplicate.
             GatewayResult.Missing -> calendar.putBinding(binding.copy(eventId = null, ownershipToken = UUID.randomUUID().toString(), state = "PENDING"))
             GatewayResult.Ambiguous -> error("Hay varias series coincidentes; no se creará otra")
         }
-        requestPublication(habitId, binding.calendarId, binding.accountName, startDate, time, durationMinutes, zoneId, reminderMinutes)
+        requestPublication(habitId, binding.calendarId, binding.accountName, startDate, time, durationMinutes, zoneId, reminderMinutes, quotaDays, confirmedRecurrenceChange = true)
     }
 
     suspend fun retryPending() {

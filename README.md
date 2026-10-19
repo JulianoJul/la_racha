@@ -24,7 +24,7 @@ Material complementario: [TASKS.md](TASKS.md), [PROMPT-IA.md](PROMPT-IA.md) y [F
 - Dominio de score/rachas/fecha local, historial anterior a creación, tres frecuencias y períodos históricos en Room/repositorio transaccional.
 - Pantallas Hoy, editor, detalle/historial y ajustes de tema.
 - Widget individual con check grande y semana informativa; widget lista con selección por instancia y navegación al detalle.
-- Exportación opt-in de planes diarios mediante Android Calendar Provider. Su compilación no acredita integración con un proveedor/cuenta real.
+- Exportación opt-in mediante Android Calendar Provider: diario, días fijos, intervalos y cuotas con días elegidos para Calendar. Las nuevas recurrencias están implementadas y compiladas; no validadas contra un proveedor/cuenta real.
 
 ### Próxima iteración acordada, aún sin implementar
 - La semana del widget individual sustituye al check grande: tocar hoy completa/desmarca.
@@ -64,6 +64,15 @@ Material complementario: [TASKS.md](TASKS.md), [PROMPT-IA.md](PROMPT-IA.md) y [F
 ### Tolerancia visual de la tira diaria — 2026-10-18
 - La tira del widget lista tolera una sola fecha anterior sin completar dentro de la ventana de siete días. Una segunda falta corta los completados más antiguos. La fecha faltante se omite, no se marca; hoy sigue visible. No cambia la racha real ni el score.
 - `./gradlew test lint assembleDebug :app:assembleDebugAndroidTest`: **BUILD SUCCESSFUL**, 97 tests unitarios sin fallos/omitidos; lint 0 errores, 11 advertencias y 1 hint. `git diff --check`: sin errores. No se ejecutó una nueva prueba instrumentada ni de launcher.
+
+### Calendar por frecuencia — 2026-10-18
+- Implementado: Diario → diaria; Días fijos → semanal con esos días; Cada X días → intervalo con su referencia original. Se ajusta la primera aparición a una fecha válida a partir de la fecha solicitada. Para una cuota, el usuario elige exactamente N días en el formulario de Calendar; eso no altera el objetivo ni el historial del hábito.
+- Al editar una frecuencia ya exportada se pregunta si actualizar también Calendar, con advertencia de modificación de la serie completa, incluidas apariciones pasadas. Rechazar conserva la serie y muestra un aviso en Calendar. Al republicar una regla distinta desde Calendar también se pide confirmación.
+- Room v4 guarda la recurrencia autorizada y los días elegidos para la cuota. Renombrar y reintentar usan ese snapshot, no la frecuencia nueva que el usuario pudo haber rechazado exportar. La migración v3→v4 preserva las series antiguas como diarias y no escribe en el proveedor.
+- Verificación nueva: `./gradlew :app:testDebugUnitTest --tests com.laracha.app.calendar.CalendarRecurrenceTest` pasó 12 tests de reglas/fechas. `./gradlew test lint assembleDebug :app:assembleDebugAndroidTest`: **BUILD SUCCESSFUL**, 118 tests unitarios sin fallos/omitidos; lint 0 errores, 11 advertencias y 1 hint. Incluye 9 pruebas del coordinador con fakes para selección, consentimiento, identidad y recuperación; no son pruebas de provider ni SQLite.
+- Esquema `app/schemas/com.laracha.app.data.HabitDatabase/4.json` exportado. En Python/SQLite 3.54.0 se ejecutaron las tres sentencias reales de `MIGRATION_3_4` sobre el esquema v3 con fixtures: se conservaron filas en las seis tablas, incluida una operación `IN_FLIGHT`, y columnas/defaults/FK/índices coincidieron con v4; `foreign_key_check` sin errores. Esto no sustituye Room Android.
+- Añadidas y compiladas pruebas instrumentadas de v3→v4 con reapertura Room y cadena v2→v4, **sin ejecutar**: `adb devices -l` no mostró dispositivos. Tampoco se instaló el APK ni se validaron formularios, recurrencias, DST o sincronización con Google en esta revisión. APK: `app/build/outputs/apk/debug/app-debug.apk`.
+- Referencia oficial consultada el 2026-10-18: [Calendar Provider](https://developer.android.com/identity/providers/calendar-provider), `RRULE`, `DTSTART`, `EVENT_TIMEZONE` y `DURATION`. No se cambiaron dependencias ni permisos.
 
 ## Arquitectura
 ```text
@@ -126,7 +135,7 @@ La combinación tiene la validación local histórica indicada arriba. Antes de 
 ## Privacidad y Calendar
 Núcleo offline, sin backend, cuentas propias, anuncios, analíticas ni permiso `INTERNET`. Calendar solicita `READ_CALENDAR` y `WRITE_CALENDAR` al activar la exportación. Publica planificación de hábitos elegidos en calendarios Google elegibles del proveedor local; no exporta marcas/rachas/score ni importa cambios externos.
 
-La sincronización del proveedor con Google depende de Android. Un insert local no demuestra llegada a Calendar web. Las nuevas frecuencias del hábito todavía no están traducidas a recurrencias de exportación.
+La sincronización del proveedor con Google depende de Android. Un insert local no demuestra llegada a Calendar web. La traducción de frecuencias ya está implementada; su comportamiento real en proveedor/Google sigue pendiente de comprobación.
 
 WorkManager puede aportar permisos/receptores de infraestructura al manifiesto fusionado (`WAKE_LOCK`, `ACCESS_NETWORK_STATE`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`). Revisar el manifiesto de release; no retirarlos sin comprobar reintentos y recuperación tras reinicio.
 

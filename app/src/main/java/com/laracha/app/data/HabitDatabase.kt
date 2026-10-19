@@ -13,7 +13,7 @@ import androidx.room.TypeConverters
         CalendarEventBindingEntity::class,
         CalendarExportOperationEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(LocalDateConverters::class)

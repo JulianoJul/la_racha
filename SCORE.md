@@ -77,7 +77,7 @@ El historial de reglas se guarda por fecha efectiva. Una transición entre regla
 |---|---|
 | Archivo/restauración | Corte del cálculo y tratamiento de intervalos archivados, coherente con el contrato de producto |
 
-Calendar no publica ni exporta frecuencias no diarias todavía; está bloqueado para estos modos hasta coordinación con el owner de Calendar. No traducir cuotas o reglas de score a recurrencias del proveedor sin acuerdo.
+Calendar traduce la última frecuencia elegida según el contrato de `PRODUCT.md`; en cuotas requiere que el usuario seleccione N días de planificación. Esa selección no convierte los días libres en obligaciones del score ni modifica sus períodos históricos. Reglas, confirmaciones y cobertura de la implementación en `PRODUCT.md` y `README.md`; no confundir tests de recurrencia con prueba de proveedor real.
 
 Las cuotas solo se evalúan en semanas lunes–domingo cuyo lunes ya pertenece a un período de cuota; no hay evaluación de una semana parcial antes de ese lunes efectivo.
 
