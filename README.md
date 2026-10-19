@@ -53,6 +53,18 @@ Material complementario: [TASKS.md](TASKS.md), [PROMPT-IA.md](PROMPT-IA.md) y [F
 - Tras instalar ambos APK con `adb -s R5CX3463Q6H install -r`, se ejecutó `adb -s R5CX3463Q6H shell am instrument -w -e class com.laracha.app.widgets.HabitListRowLayoutTest,com.laracha.app.widgets.HabitListBackgroundTest com.laracha.app.test/androidx.test.runner.AndroidJUnitRunner`: **4 tests correctos** en Samsung SM-A156M Android 16. Comprueban RemoteViews, margen, altura y controles separados; no sustituyen interacción real en launcher. La comprobación manual del último cambio queda a cargo del usuario.
 - APK final instalado; no se modificaron hábitos ni marcas durante estas pruebas. La ejecución anterior de `connectedDebugAndroidTest` desinstaló la app al finalizar y se reinstaló después: no afirmar que esa ejecución conservó los datos. Para teléfonos personales, evitar esa tarea y su limpieza automática; usar un dispositivo desechable o instalación `-r` e instrumentación directa sin desinstalación. Se guardó un respaldo local fuera del repositorio antes de esta última actualización.
 
+### Tiras de días y acciones del widget individual — 2026-10-18
+- Implementado: el widget individual conserva solo la acción general al detalle y la acción de hoy para marcar/desmarcar; el nombre ya no tiene un enlace propio duplicado.
+- El widget lista sustituye su checkbox por iniciales y círculos. Hoy siempre al final, azul e interactivo; anteriores completados grises. Máximo siete fechas contando hoy. En diarios, los anteriores son consecutivos; en las otras tres modalidades, se muestran solo los completados dentro de los últimos siete días, incluidos extras y sin cortar por faltas. Contrato completo en `WIDGETS.md`.
+- Fechas derivadas del historial en dominio/repositorio, sin nuevos datos persistidos ni migración. Ambos widgets comparten el indicador y su acción idempotente. Se conservan navegación y margen interior de 24dp para el scroll; las tiras largas tienen línea propia.
+- `./gradlew :app:testDebugUnitTest --tests com.laracha.app.domain.HabitRecentProgressTest`: 10 pruebas de fechas correctas antes de integrar los widgets. `./gradlew test lint assembleDebug :app:assembleDebugAndroidTest`: **BUILD SUCCESSFUL**, 95 tests unitarios sin fallos/omitidos; lint 0 errores, 11 advertencias y 1 hint. `git diff --check`: sin errores.
+- APK generado en `app/build/outputs/apk/debug/app-debug.apk`. Las pruebas instrumentadas de acciones y geometría se compilaron, **no se ejecutaron**: `adb devices -l` no mostró dispositivos conectados. Esta revisión aún no se instaló ni se comprobó visual/interactivamente en launcher.
+- Calendar no se modificó: adaptar la recurrencia diaria existente a las frecuencias del hábito sigue pendiente; esta tira no altera el score ni convierte completados en eventos.
+
+### Tolerancia visual de la tira diaria — 2026-10-18
+- La tira del widget lista tolera una sola fecha anterior sin completar dentro de la ventana de siete días. Una segunda falta corta los completados más antiguos. La fecha faltante se omite, no se marca; hoy sigue visible. No cambia la racha real ni el score.
+- `./gradlew test lint assembleDebug :app:assembleDebugAndroidTest`: **BUILD SUCCESSFUL**, 97 tests unitarios sin fallos/omitidos; lint 0 errores, 11 advertencias y 1 hint. `git diff --check`: sin errores. No se ejecutó una nueva prueba instrumentada ni de launcher.
+
 ## Arquitectura
 ```text
 app/src/main/java/com/laracha/app/

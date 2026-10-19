@@ -16,11 +16,9 @@ import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
-import androidx.glance.appwidget.CheckBox
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.SizeMode
-import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity as actionStartDetailActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
@@ -37,8 +35,7 @@ import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.height
 import androidx.glance.layout.wrapContentHeight
-import androidx.glance.semantics.contentDescription
-import androidx.glance.semantics.semantics
+import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
@@ -47,7 +44,6 @@ import com.laracha.app.MainActivity
 import com.laracha.app.data.HabitToday
 import kotlinx.coroutines.flow.first
 
-private val ListActionHabitIdKey = ActionParameters.Key<String>("habit_id")
 private val ListWidgetIdKey = ActionParameters.Key<Int>(AppWidgetManager.EXTRA_APPWIDGET_ID)
 
 class HabitListWidget : GlanceAppWidget() {
@@ -156,43 +152,59 @@ internal fun HabitListRow(habit: HabitToday, compact: Boolean) {
             .putExtra("habit_id", habit.habit.id)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
     )
-    Row(
+    Column(
         // Keep the gutter INSIDE each item: padding the LazyColumn moves its scrollbar too.
         modifier = GlanceModifier.fillMaxWidth()
             .clickable(actionStartActivity<MainActivity>())
             .padding(end = 24.dp, top = if (compact) 1.dp else 3.dp, bottom = if (compact) 1.dp else 3.dp),
-        verticalAlignment = Alignment.Vertical.CenterVertically,
     ) {
-        Row(
-            modifier = GlanceModifier.defaultWeight().height(52.dp).clickable(openDetail),
-            verticalAlignment = Alignment.Vertical.CenterVertically,
-        ) {
-            Text(habit.habit.emoji, style = TextStyle(fontSize = 18.sp))
-            Spacer(GlanceModifier.size(8.dp))
-            Column(modifier = GlanceModifier.defaultWeight()) {
-                Text(
-                    text = habit.habit.name,
-                    maxLines = 1,
-                    style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium),
-                )
-                Text(
-                    text = if (compact) "${habit.scorePercent}%" else "${habit.scorePercent}% · 🔥 ${habit.currentStreak}",
-                    style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
-                )
+        // Long strips get their own line instead of squeezing the habit name or the 48dp target.
+        if (habit.recentProgressDays.size > 3) {
+            HabitListInformation(habit, compact, GlanceModifier.fillMaxWidth().clickable(openDetail))
+            Row(GlanceModifier.fillMaxWidth(), horizontalAlignment = Alignment.Horizontal.End) {
+                HabitListDayStrip(habit)
+            }
+        } else {
+            Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Vertical.CenterVertically) {
+                HabitListInformation(habit, compact, GlanceModifier.defaultWeight().clickable(openDetail))
+                HabitListDayStrip(habit)
             }
         }
-        CheckBox(
-            checked = habit.completedToday,
-            text = "",
-            modifier = GlanceModifier.size(48.dp).semantics {
-                contentDescription = "${habit.habit.name}, " +
-                    if (habit.completedToday) "completado hoy. Desmarcar" else "pendiente hoy. Completar"
-            },
-            onCheckedChange = actionRunCallback<SetHabitCompletionAction>(
-                actionParametersOf(ListActionHabitIdKey to habit.habit.id),
-            ),
-            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 11.sp),
-            maxLines = 1,
-        )
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun HabitListInformation(habit: HabitToday, compact: Boolean, modifier: GlanceModifier) {
+    Row(modifier.height(52.dp), verticalAlignment = Alignment.Vertical.CenterVertically) {
+        Text(habit.habit.emoji, style = TextStyle(fontSize = 18.sp))
+        Spacer(GlanceModifier.size(8.dp))
+        Column(modifier = GlanceModifier.defaultWeight()) {
+            Text(
+                text = habit.habit.name,
+                maxLines = 1,
+                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium),
+            )
+            Text(
+                text = if (compact) "${habit.scorePercent}%" else "${habit.scorePercent}% · 🔥 ${habit.currentStreak}",
+                maxLines = 1,
+                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
+            )
+        }
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun HabitListDayStrip(habit: HabitToday) {
+    Row(GlanceModifier.height(52.dp), verticalAlignment = Alignment.Vertical.CenterVertically) {
+        habit.recentProgressDays.forEach { day ->
+            HabitDayIndicator(
+                habitId = habit.habit.id,
+                habitName = habit.habit.name,
+                day = day,
+                modifier = GlanceModifier.width(if (day.isToday) 48.dp else 24.dp).height(52.dp),
+                circleSize = if (day.isToday) 28.dp else 20.dp,
+                circleAreaHeight = 28.dp,
+            )
+        }
     }
 }

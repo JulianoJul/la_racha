@@ -6,39 +6,28 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
-import androidx.compose.ui.graphics.Color
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
-import androidx.glance.Image
-import androidx.glance.ImageProvider
-import androidx.glance.ColorFilter
 import androidx.glance.LocalSize
 import androidx.glance.LocalContext
-import androidx.glance.action.ActionParameters
-import androidx.glance.action.Action
-import androidx.glance.action.actionParametersOf
 import androidx.glance.appwidget.action.actionStartActivity as actionStartActivityWithIntent
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.SizeMode
-import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
-import androidx.glance.layout.Box
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
-import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
-import androidx.glance.color.ColorProvider
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
@@ -47,17 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.laracha.app.HabitApplication
 import com.laracha.app.MainActivity
-import com.laracha.app.R
 import com.laracha.app.data.HabitToday
-import com.laracha.app.domain.HabitWeekDay
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 import kotlinx.coroutines.flow.first
-
-private val HabitIdKey = ActionParameters.Key<String>("habit_id")
-private val WidgetBlue = ColorProvider(day = Color(0xFF2563EB), night = Color(0xFF8AB4FF))
-private val WidgetGray = ColorProvider(day = Color(0xFF6B7280), night = Color(0xFF9CA3AF))
-private val WidgetDayFormat = DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", Locale.forLanguageTag("es-ES"))
 
 internal fun singleWidgetMetric(currentStreak: Int, scorePercent: Int): String? = when {
     currentStreak > 0 -> "🔥 $currentStreak"
@@ -119,7 +99,7 @@ class SingleHabitWidget : GlanceAppWidget() {
 }
 
 @androidx.compose.runtime.Composable
-private fun SingleHabitContent(context: Context, habit: HabitToday, size: DpSize) {
+internal fun SingleHabitContent(context: Context, habit: HabitToday, size: DpSize) {
     val largeFont = LocalContext.current.resources.configuration.fontScale > 1.3f
     val compact = size.height < 150.dp || (largeFont && size.height < 200.dp)
     val expanded = size.height >= 220.dp && size.width >= 220.dp
@@ -141,7 +121,6 @@ private fun SingleHabitContent(context: Context, habit: HabitToday, size: DpSize
     ) {
         SingleHabitTitle(
             habit,
-            openDetail,
             GlanceModifier.fillMaxWidth(),
             when {
                 compact -> 16.sp
@@ -165,10 +144,10 @@ private fun SingleHabitContent(context: Context, habit: HabitToday, size: DpSize
 }
 
 @androidx.compose.runtime.Composable
-private fun SingleHabitTitle(habit: HabitToday, openDetail: Action, modifier: GlanceModifier, fontSize: TextUnit, maxLines: Int) {
+private fun SingleHabitTitle(habit: HabitToday, modifier: GlanceModifier, fontSize: TextUnit, maxLines: Int) {
     Text(
         text = "${habit.habit.emoji}  ${habit.habit.name}",
-        modifier = modifier.clickable(openDetail),
+        modifier = modifier,
         maxLines = maxLines,
         style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = fontSize, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
     )
@@ -180,44 +159,16 @@ private fun SingleHabitDayCarousel(habit: HabitToday, layout: SingleWidgetCarous
     val firstVisible = (days.size - layout.visibleDayCount).coerceAtLeast(0) / 2
     Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Vertical.CenterVertically) {
         days.drop(firstVisible).take(layout.visibleDayCount).forEach { day ->
-            // Only today is blue; neighbors remain chronological across week boundaries.
-            val color = if (day.isToday) WidgetBlue else WidgetGray
-            val todayAction = if (day.isToday) {
-                actionRunCallback<SetHabitCompletionAction>(
-                    actionParametersOf(
-                        HabitIdKey to habit.habit.id,
-                        CompletionValueKey to singleWidgetCompletionTarget(day.completed),
-                    ),
-                )
-            } else null
-            Column(
-                modifier = if (todayAction != null) {
-                    GlanceModifier.width(layout.todayCellDp.dp).clickable(todayAction)
+            HabitDayIndicator(
+                habitId = habit.habit.id,
+                habitName = habit.habit.name,
+                day = day,
+                modifier = if (day.isToday) {
+                    GlanceModifier.width(layout.todayCellDp.dp)
                 } else GlanceModifier.defaultWeight(),
-                horizontalAlignment = Alignment.Horizontal.CenterHorizontally,
-            ) {
-                Text(day.initial, style = TextStyle(color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold), maxLines = 1)
-                Spacer(GlanceModifier.size(2.dp))
-                Box(
-                    modifier = GlanceModifier.fillMaxWidth().height(layout.todayCircleDp.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(
-                        provider = ImageProvider(if (day.completed) R.drawable.widget_check_done else R.drawable.widget_day_outline),
-                        contentDescription = (if (day.isToday) "${habit.habit.name}, " else "") + day.date.format(WidgetDayFormat) +
-                            (if (day.isToday) ", hoy" else "") + ", " + when {
-                            day.completed -> "completado"
-                            !day.available -> "no disponible"
-                            day.isToday -> "pendiente"
-                            else -> "sin completar"
-                        } + (if (day.isToday) {
-                            if (day.completed) ". Desmarcar" else ". Completar"
-                        } else ""),
-                        modifier = GlanceModifier.size((if (day.isToday) layout.todayCircleDp else layout.neighborCircleDp).dp),
-                        colorFilter = ColorFilter.tint(color),
-                    )
-                }
-            }
+                circleSize = (if (day.isToday) layout.todayCircleDp else layout.neighborCircleDp).dp,
+                circleAreaHeight = layout.todayCircleDp.dp,
+            )
         }
     }
 }

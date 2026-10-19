@@ -3,13 +3,13 @@
 ## Estado y base técnica
 Widgets nativos con Kotlin + Jetpack Glance, conectados al mismo repositorio Room que la app. Lista desplazable mediante `LazyColumn` real.
 
-La evidencia histórica al final corresponde a versiones anteriores. **Diseño actual en código:** hoy grande en el centro del carrusel de días, métrica positiva y lista sin etiqueta de estado visible junto al check. La verificación de esta revisión se registra en `README.md`; no confundir build/tests con prueba de launcher.
+La evidencia histórica al final corresponde a versiones anteriores. **Diseño actual en código:** individual con hoy centrado y solo dos acciones (fondo y hoy); lista con tira de completados recientes y control azul de hoy. La verificación de esta revisión se registra en `README.md`; no confundir build/tests con prueba de launcher.
 
 ## A. Individual
 ### Composición objetivo
 - Tamaño inicial 2×2, redimensionable, conjunto centrado: emoji/nombre, días alrededor de hoy y métrica opcional.
 - Hoy es el círculo más grande en el centro y el único control de completado; no hay otro check duplicado. Mostrar exactamente cinco fechas: dos anteriores, hoy y dos siguientes. Adaptar los círculos vecinos al ancho disponible sin desplazar hoy del centro.
-- Tocar hoy marca/desmarca sin abrir la app. Tocar nombre/emoji abre el detalle del hábito.
+- Tocar hoy marca/desmarca sin abrir la app. El toque general del fondo abre el detalle del hábito. Nombre/emoji no tienen una acción propia duplicada: forman parte de esa superficie general.
 - Los otros días muestran historial real o fechas futuras sin acción; la edición histórica sigue en el detalle. «Carrusel» describe la presentación centrada, no una navegación horizontal de historial ni siete acciones diminutas.
 - Mostrar `🔥 N` si la racha actual es mayor que cero. Si es cero y el porcentaje mostrado de constancia es mayor que cero, mostrar ese porcentaje. Si ambos son cero, omitir la métrica y su espacio. No mostrar dos métricas simultáneas en este widget pequeño.
 - Elegir exactamente un hábito al configurar. Hábito borrado/archivado o selección ausente: estado comprensible con acceso a reconfigurar.
@@ -40,7 +40,11 @@ Al incorporar frecuencias, el estado accesible debe distinguir día libre y pend
 - `selected`: entre 1 y 5 hábitos activos, elegidos y ordenados para esa instancia.
 - `all`: todos los hábitos activos, sin límite artificial, con scroll vertical auténtico. Los nuevos aparecen automáticamente.
 - Encabezado «Mis hábitos», acceso a configuración y resumen del día cuando haya espacio. La semántica del resumen con frecuencias se define antes de incorporarlas; no equiparar «todos» a «solo los que tocan hoy» silenciosamente.
-- Cada fila: emoji, nombre, constancia o racha y control de completado independiente.
+- Cada fila: emoji, nombre, constancia o racha y una tira de días con inicial sobre cada círculo. Hoy es el último, a la derecha: borde azul si está pendiente y check azul si está completo; es el único control de completado. Los anteriores son checks grises informativos. No hay otro checkbox duplicado.
+- Máximo siete fechas en total, siempre dentro de hoy y sus seis días naturales anteriores, en orden cronológico y sin futuros. Hoy permanece visible aunque no toque según la frecuencia, para poder marcar/desmarcar también un día extra.
+- **Diario:** recorrer los seis días anteriores desde ayer hacia atrás, tolerando una única fecha sin marcar; mostrar solo sus completados y detenerse al encontrar una segunda falta. Ejemplo: marcas `L M M J`, viernes sin marcar y hoy sábado → `L M M J S`. Nunca dibujar un check en el hueco. Esta tolerancia es solo visual: no protege ni cambia la racha real, el score o el historial.
+- **Días fijos, Cada X días y Días por semana:** mostrar todos los anteriores completados dentro de esa ventana, incluidos extras fuera de programación. Omitir las fechas sin marcar, sin que una falta corte esta tira visual. Ejemplo: hoy sábado y marcas martes/miércoles/viernes → `M M V S`; los tres anteriores son grises y hoy azul. No reinterpretar esta tira como racha ni como cumplimiento del objetivo semanal.
+- Con una a tres fechas la tira comparte línea con la información. Con cuatro a siete ocupa una línea propia para conservar el nombre legible y el área de hoy de 48×52dp.
 - El control no repite nombre/estado como texto visible; la descripción accesible mantiene nombre, estado y acción.
 - Tocar la zona de información abre el detalle por **ID estable**, incluso si la app estaba en Ajustes/Calendar o mostraba otro hábito.
 - Tocar el fondo o un espacio vacío abre la app, también debajo de una lista corta. Los checks mantienen su acción independiente sin abrir la app; «Editar» sigue abriendo la configuración de esa instancia.

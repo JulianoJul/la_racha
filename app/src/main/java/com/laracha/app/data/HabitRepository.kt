@@ -34,6 +34,7 @@ data class HabitToday(
     val week: List<HabitWeekDay> = emptyList(),
     val frequency: HabitFrequency = HabitFrequency.Daily,
     val daysAroundToday: List<HabitWeekDay> = emptyList(),
+    val recentProgressDays: List<HabitWeekDay> = emptyList(),
 )
 
 data class HabitDetail(
@@ -101,6 +102,8 @@ class HabitRepository(
             val completedDays = daysByHabit[habit.id].orEmpty()
             val createdOn = LocalDate.parse(habit.createdOn)
             val periods = periodsByHabit[habit.id].orEmpty()
+            val frequency = periods.lastOrNull { !it.effectiveFrom.isAfter(forDate) }?.frequency
+                ?: HabitFrequency.Daily
             val score = HabitScoreCalculator.calculate(createdOn, completedDays, forDate, periods)
             val streaks = StreakCalculator.calculate(createdOn, completedDays, forDate)
             HabitToday(
@@ -111,8 +114,8 @@ class HabitRepository(
                 bestStreak = streaks.best,
                 week = HabitWeek.days(createdOn, completedDays, forDate),
                 daysAroundToday = HabitWeek.daysAroundToday(createdOn, completedDays, forDate),
-                frequency = periods.lastOrNull { !it.effectiveFrom.isAfter(forDate) }?.frequency
-                    ?: HabitFrequency.Daily,
+                recentProgressDays = HabitWeek.recentProgressDays(createdOn, completedDays, forDate, frequency),
+                frequency = frequency,
             )
         }
     }

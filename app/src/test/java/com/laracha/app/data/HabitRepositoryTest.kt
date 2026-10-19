@@ -156,6 +156,50 @@ class HabitRepositoryTest {
     }
 
     @Test
+    fun recentDailyProgressReactsToTodayAndHistoricalEdits() = runBlocking {
+        val dao = FakeHabitDao()
+        dao.insertHabit(habit(createdOn = today.minusWeeks(1)))
+        listOf(today.minusDays(2), today.minusDays(1), today).forEach {
+            dao.putCompletion(CompletionEntity("habit", it.toString()))
+        }
+        val repository = HabitRepository(dao, clock, ZoneOffset.UTC)
+        val before = repository.observeToday().first().single()
+        assertEquals(listOf(today.minusDays(2), today.minusDays(1), today), before.recentProgressDays.map { it.date })
+
+        repository.setCompleted("habit", today, false)
+        val pending = repository.observeToday().first().single()
+        assertEquals(before.recentProgressDays.dropLast(1), pending.recentProgressDays.dropLast(1))
+        assertFalse(pending.recentProgressDays.last().completed)
+
+        repository.setCompleted("habit", today.minusDays(1), false)
+        val tolerated = repository.observeToday().first().single()
+        assertEquals(listOf(today.minusDays(2), today), tolerated.recentProgressDays.map { it.date })
+        assertEquals(0, tolerated.currentStreak)
+        val broken = repository.observeToday(today.plusDays(1)).first().single()
+        assertEquals(listOf(today.plusDays(1)), broken.recentProgressDays.map { it.date })
+        assertEquals(setOf(today.minusDays(2).toString()), dao.completions.value.map { it.localDate }.toSet())
+    }
+
+    @Test
+    fun recentProgressUsesEffectiveFrequencyRatherThanPendingChange() = runBlocking {
+        val dao = FakeHabitDao()
+        dao.insertHabit(habit(createdOn = today.minusWeeks(1)))
+        dao.putCompletion(CompletionEntity("habit", today.minusDays(3).toString()))
+        val repository = HabitRepository(dao, clock, ZoneOffset.UTC)
+        val frequency = HabitFrequency.FixedDays(setOf(java.time.DayOfWeek.MONDAY))
+        repository.updateFrequency("habit", frequency)
+
+        val current = repository.observeToday().first().single()
+        assertEquals(HabitFrequency.Daily, current.frequency)
+        assertEquals(listOf(today), current.recentProgressDays.map { it.date })
+
+        val nextDay = repository.observeToday(today.plusDays(1)).first().single()
+        assertEquals(frequency, nextDay.frequency)
+        assertEquals(listOf(today.minusDays(3), today.plusDays(1)), nextDay.recentProgressDays.map { it.date })
+        assertEquals(0, nextDay.currentStreak) // The visual strip is not a new streak calculation.
+    }
+
+    @Test
     fun removingOldestHistoricalCompletionRecomputesDetailFromNextCompletion() = runBlocking {
         val createdOn = today.minusDays(1)
         val earliest = today.minusDays(3)

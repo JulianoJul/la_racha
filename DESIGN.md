@@ -65,8 +65,10 @@ Indicadores semanales del widget: azul `#2563EB` / `#8AB4FF` para hoy; gris `#6B
 
 ### Widgets
 - Individual 2×2: emoji/nombre, carrusel de fechas con hoy grande en el centro, vecinos a ambos lados y una métrica positiva opcional. Priorizar círculos legibles sobre ver los siete días. No añadir otro check separado.
+- Individual con solo dos acciones: fondo general para detalle y hoy para completar; el nombre no es otro enlace independiente.
 - Hoy azul; resto gris; completados con check recortado transparente. Métrica: `🔥 N` si N>0, en otro caso porcentaje positivo, o sin métrica.
 - Lista: filas compactas y desplazamiento real, con espacio lateral reservado a la barra para que nunca pase sobre checks. Sin texto visible «nombre: pendiente/completado» junto al check; conservar nombre/estado como descripción accesible.
+- La lista sustituye el checkbox por una tira de hasta siete fechas: inicial arriba, anteriores completados grises y hoy azul al final. Reglas por frecuencia en `WIDGETS.md`; las tiras largas van debajo del nombre, sin comprimir su texto ni el área de toque de hoy. Mantener 24dp de margen interior a la derecha para la barra.
 - Fondo y espacios vacíos de la lista abren la app; información de cada hábito abre su detalle y checks/«Editar» conservan sus acciones propias.
 - Configuración de lista: «Todos» y «Elegidos» separados por 12dp.
 - Verificar áreas táctiles y restricciones reales en launcher; no asumir que un composable de app funciona igual en Glance.

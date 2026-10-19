@@ -23,6 +23,30 @@ object HabitWeek {
     fun daysAroundToday(createdOn: LocalDate, completedDays: Set<LocalDate>, today: LocalDate): List<HabitWeekDay> =
         dayIndicators(today.minusDays(3), createdOn, completedDays, today)
 
+    /** Today plus recent checks; the daily visual strip tolerates one missing past date, without changing real streaks. */
+    fun recentProgressDays(
+        createdOn: LocalDate,
+        completedDays: Set<LocalDate>,
+        today: LocalDate,
+        frequency: HabitFrequency,
+    ): List<HabitWeekDay> {
+        val window = dayIndicators(today.minusDays(6), createdOn, completedDays, today)
+        val previous = window.dropLast(1)
+        val visible = if (frequency == HabitFrequency.Daily) {
+            var missingDays = 0
+            previous.asReversed()
+                .takeWhile { day ->
+                    if (!day.completed) missingDays++
+                    missingDays <= 1
+                }
+                .filter { it.completed }
+                .asReversed()
+        } else {
+            previous.filter { it.completed }
+        }
+        return visible + window.last()
+    }
+
     private fun dayIndicators(
         firstDay: LocalDate,
         createdOn: LocalDate,
