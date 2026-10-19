@@ -4,7 +4,7 @@
 - [x] Crear proyecto Kotlin Android reproducible y Gradle Wrapper.
 - [x] Elegir y documentar versiones de Compose, Glance, Room, DataStore y Android SDK en `README.md`.
 - [x] Configurar tests de dominio.
-- [x] Configurar CI básico (build + tests).
+- [x] Build automático de GitHub Actions retirado por petición del usuario; mantener las comprobaciones locales con Gradle.
 
 ## Hito 1 — Dominio probado
 - [x] Habit, Completion, repositorio y Clock inyectable.

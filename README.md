@@ -74,6 +74,11 @@ Material complementario: [TASKS.md](TASKS.md), [PROMPT-IA.md](PROMPT-IA.md) y [F
 - Añadidas y compiladas pruebas instrumentadas de v3→v4 con reapertura Room y cadena v2→v4, **sin ejecutar**: `adb devices -l` no mostró dispositivos. Tampoco se instaló el APK ni se validaron formularios, recurrencias, DST o sincronización con Google en esta revisión. APK: `app/build/outputs/apk/debug/app-debug.apk`.
 - Referencia oficial consultada el 2026-10-18: [Calendar Provider](https://developer.android.com/identity/providers/calendar-provider), `RRULE`, `DTSTART`, `EVENT_TIMEZONE` y `DURATION`. No se cambiaron dependencias ni permisos.
 
+### Instalación posterior y build de GitHub
+- APK actualizado en Samsung SM-A156M con `adb -s R5CX3463Q6H install -r app/build/outputs/apk/debug/app-debug.apk` → **Success**; se guardó un respaldo local previo fuera del repositorio. Copiado a la raíz del almacenamiento interno mediante `adb -s R5CX3463Q6H push app/build/outputs/apk/debug/app-debug.apk /sdcard/LaRacha.apk`.
+- Por petición del usuario, no se tomaron capturas ni se ejecutaron pruebas manuales o instrumentadas en esta instalación; la comprobación de uso queda a su cargo.
+- Build automático de GitHub Actions retirado por petición del usuario. Los runs anteriores fallaban al preparar el SDK (`Failed to find package 'tools'`), antes de ejecutar Gradle; no eran resultados de tests de la app. Las comprobaciones locales con Gradle se mantienen. Eliminar el workflow no cambia el resultado histórico de esos runs.
+
 ## Arquitectura
 ```text
 app/src/main/java/com/laracha/app/
